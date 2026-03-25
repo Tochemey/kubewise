@@ -1,16 +1,16 @@
-// Copyright 2026 Arsene Tochemey Gandote
+//    Copyright 2026 KubeWise Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//        http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
 
 package pricing
 
@@ -35,7 +35,7 @@ pricing:
     spot_hourly: 0.115
 `
 	path := filepath.Join(t.TempDir(), "pricing.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	provider, err := LoadPricingFromFile(path)
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ pricing:
     on_demand_hourly: 0.192
 `
 	path := filepath.Join(t.TempDir(), "pricing.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	provider, err := LoadPricingFromFile(path)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ pricing:
     on_demand_hourly: 0.192
 `
 	path := filepath.Join(t.TempDir(), "pricing.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	provider, err := LoadPricingFromFile(path)
 	require.NoError(t, err)
@@ -99,7 +99,7 @@ func TestLoadPricingFromFileNotFound(t *testing.T) {
 
 func TestLoadPricingFromFileInvalidYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("{{{{not yaml"), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte("{{{{not yaml"), 0o600))
 
 	_, err := LoadPricingFromFile(path)
 	require.Error(t, err)
@@ -111,7 +111,7 @@ func TestLoadPricingFromFileEmptyPricing(t *testing.T) {
 pricing:
 `
 	path := filepath.Join(t.TempDir(), "empty.yaml")
-	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	_, err := LoadPricingFromFile(path)
 	require.Error(t, err)

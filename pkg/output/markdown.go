@@ -1,16 +1,16 @@
-// Copyright 2026 Arsene Tochemey Gandote
+//    Copyright 2026 KubeWise Authors
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+//    Licensed under the Apache License, Version 2.0 (the "License");
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//        http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
 
 package output
 
@@ -27,19 +27,19 @@ func RenderMarkdown(w io.Writer, report Report) error {
 	var sb strings.Builder
 
 	// Title
-	sb.WriteString(fmt.Sprintf("## KubeWise: %s\n\n", report.ScenarioName))
+	fmt.Fprintf(&sb, "## KubeWise: %s\n\n", report.ScenarioName)
 	if report.ScenarioDesc != "" {
-		sb.WriteString(fmt.Sprintf("_%s_\n\n", report.ScenarioDesc))
+		fmt.Fprintf(&sb, "_%s_\n\n", report.ScenarioDesc)
 	}
 
 	// Summary table
 	sb.WriteString("| Metric | Value |\n")
 	sb.WriteString("|--------|-------|\n")
-	sb.WriteString(fmt.Sprintf("| Current monthly cost | %s |\n", formatCost(report.BaselineCost)))
-	sb.WriteString(fmt.Sprintf("| Projected monthly cost | %s |\n", formatCost(report.ProjectedCost)))
-	sb.WriteString(fmt.Sprintf("| **Savings** | **%s/mo (%.1f%%)** |\n", formatCost(report.Savings), report.SavingsPercent))
-	sb.WriteString(fmt.Sprintf("| Cluster OOM risk | %.1f%% %s |\n", report.Risk.ClusterOOM*100, mdRiskEmoji(classifyOOMLevel(report.Risk.ClusterOOM))))
-	sb.WriteString(fmt.Sprintf("| Overall risk | %s |\n", mdRiskBadge(report.Risk.OverallLevel)))
+	fmt.Fprintf(&sb, "| Current monthly cost | %s |\n", formatCost(report.BaselineCost))
+	fmt.Fprintf(&sb, "| Projected monthly cost | %s |\n", formatCost(report.ProjectedCost))
+	fmt.Fprintf(&sb, "| **Savings** | **%s/mo (%.1f%%)** |\n", formatCost(report.Savings), report.SavingsPercent)
+	fmt.Fprintf(&sb, "| Cluster OOM risk | %.1f%% %s |\n", report.Risk.ClusterOOM*100, mdRiskEmoji(classifyOOMLevel(report.Risk.ClusterOOM)))
+	fmt.Fprintf(&sb, "| Overall risk | %s |\n", mdRiskBadge(report.Risk.OverallLevel))
 	sb.WriteString("\n")
 
 	// Namespace breakdown in collapsible sections
@@ -49,11 +49,11 @@ func RenderMarkdown(w io.Writer, report Report) error {
 		sb.WriteString("| Namespace | Savings | Risk |\n")
 		sb.WriteString("|-----------|---------|------|\n")
 		for _, ns := range report.NamespaceBreakdown {
-			sb.WriteString(fmt.Sprintf("| %s | %s/mo | %s |\n",
+			fmt.Fprintf(&sb, "| %s | %s/mo | %s |\n",
 				ns.Namespace,
 				formatCost(ns.Savings),
 				mdRiskBadge(ns.RiskLevel),
-			))
+			)
 		}
 
 		// Per-workload details if verbose
@@ -63,12 +63,12 @@ func RenderMarkdown(w io.Writer, report Report) error {
 			sb.WriteString("|-----------|----------|---------|------|\n")
 			for _, ns := range report.NamespaceBreakdown {
 				for _, wl := range ns.Workloads {
-					sb.WriteString(fmt.Sprintf("| %s | %s | %s/mo | %s |\n",
+					fmt.Fprintf(&sb, "| %s | %s | %s/mo | %s |\n",
 						ns.Namespace,
 						wl.Name,
 						formatCost(wl.Savings),
 						mdRiskBadge(wl.RiskLevel),
-					))
+					)
 				}
 			}
 		}
