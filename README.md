@@ -14,7 +14,7 @@
 <p align="center">
   <a href="https://github.com/tochemey/kubewise/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/tochemey/kubewise/ci.yml?style=flat-square" ></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="License"></a>
-  <a href="https://goreportcard.com/report/github.com/tochemey/kubewise"><img src="https://goreportcard.com/badge/github.com/tochemey/kubewise?style=flat-square" alt="Go Report Card"></a>
+  <a href="https://goreportcard.com/report/github.com/tochemey/kubewise"><img src="https://goreportcard.com/badge/github.com/tochemey/kubewise" alt="Go Report Card"></a>
 </p>
 
 ---
