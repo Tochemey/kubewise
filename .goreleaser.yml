@@ -11,18 +11,40 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
       - -X main.buildDate={{.Date}}
+
+universal_binaries:
+  - id: kubectl-whatif-universal
+    ids:
+      - kubectl-whatif
+    replace: false
+    name_template: kubectl-whatif
 
 archives:
   - id: kubectl-whatif
-    format: tar.gz
+    ids:
+      - kubectl-whatif
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: kubectl-whatif-universal
+    ids:
+      - kubectl-whatif-universal
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_darwin_universal"
 
 checksum:
   name_template: "checksums.txt"
@@ -42,6 +64,29 @@ release:
     name: kubewise
   draft: false
   prerelease: auto
+
+homebrew_casks:
+  - name: kubectl-whatif
+    ids:
+      - kubectl-whatif
+    repository:
+      owner: tochemey
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/tochemey/kubewise"
+    description: "Kubernetes cost and performance what-if simulator"
+
+scoops:
+  - name: kubectl-whatif
+    ids:
+      - kubectl-whatif
+    repository:
+      owner: tochemey
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: "https://github.com/tochemey/kubewise"
+    description: "Kubernetes cost and performance what-if simulator"
+    license: "Apache-2.0"
 
 krews:
   - name: whatif

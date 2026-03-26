@@ -26,6 +26,7 @@ import (
 // Build-time variables populated via ldflags.
 var (
 	version   = "dev"
+	commit    = "none"
 	buildDate = "unknown"
 )
 
@@ -93,6 +94,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Run: func(_ *cobra.Command, _ []string) {
 			fmt.Printf("kubectl-whatif %s\n", version)
+			fmt.Printf("  commit:     %s\n", commit)
 			fmt.Printf("  build date: %s\n", buildDate)
 			fmt.Printf("  go version: %s\n", runtime.Version())
 			fmt.Printf("  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
