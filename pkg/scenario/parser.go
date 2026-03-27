@@ -115,13 +115,13 @@ func ParseScenarioBytes(data []byte) (Scenario, error) {
 
 func parseScenarioByKind(kind string, meta ScenarioMetadata, specNode *yaml.Node) (Scenario, error) {
 	switch kind {
-	case "RightSize":
+	case KindRightSize:
 		return parseRightSizeScenario(meta, specNode)
-	case "Consolidate":
+	case KindConsolidate:
 		return parseConsolidateScenario(meta, specNode)
-	case "SpotMigrate":
+	case KindSpotMigrate:
 		return parseSpotMigrateScenario(meta, specNode)
-	case "Composite":
+	case KindComposite:
 		return parseCompositeScenario(meta, specNode)
 	default:
 		return nil, fmt.Errorf("unknown scenario kind: %s", kind)
@@ -152,7 +152,7 @@ func parseRightSizeScenario(meta ScenarioMetadata, specNode *yaml.Node) (Scenari
 		}
 	}
 
-	limitStrategy := "ratio"
+	limitStrategy := LimitStrategyRatio
 	if spec.Limits != nil && spec.Limits.Strategy != "" {
 		limitStrategy = spec.Limits.Strategy
 	}

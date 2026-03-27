@@ -204,6 +204,7 @@ func estimateDataPoints(window time.Duration) int {
 
 // DiscoverPrometheusURL attempts to auto-discover the Prometheus endpoint
 // by checking for known services in the cluster.
+// TODO: why do we try to auto-discover instead of requiring a config? Maybe we should just require a config and remove this function?
 func DiscoverPrometheusURL(ctx context.Context, clientset kubernetes.Interface) string {
 	// Check for Prometheus service in monitoring namespace
 	for _, ns := range []string{"monitoring", "prometheus", "kube-monitoring"} {

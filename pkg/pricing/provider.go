@@ -20,8 +20,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tochemey/kubewise/pkg/collector"
 	"k8s.io/klog/v2"
+
+	"github.com/tochemey/kubewise/pkg/collector"
 )
 
 var (
