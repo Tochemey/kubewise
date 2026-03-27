@@ -29,7 +29,7 @@ type SpotMigrateScenario struct {
 	SpotDiscount      float64
 }
 
-func (s *SpotMigrateScenario) Kind() string { return "SpotMigrate" }
+func (s *SpotMigrateScenario) Kind() string { return KindSpotMigrate }
 
 // Apply tags eligible pods as spot-scheduled based on controller type,
 // replica count, and namespace exclusions. The snapshot is already a deep copy.

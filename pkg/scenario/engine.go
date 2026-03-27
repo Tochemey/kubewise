@@ -20,6 +20,23 @@ import (
 	"github.com/tochemey/kubewise/pkg/collector"
 )
 
+// Scenario kind constants identify the type of mutation a scenario performs.
+// These values are used in YAML scenario files and returned by [Scenario.Kind].
+const (
+	// KindRightSize adjusts container resource requests and limits to match
+	// observed usage percentiles, reducing over-provisioning.
+	KindRightSize = "RightSize"
+	// KindConsolidate repacks workloads onto fewer, larger nodes to improve
+	// bin-packing efficiency and reduce total node count.
+	KindConsolidate = "Consolidate"
+	// KindSpotMigrate identifies workloads eligible to run on spot/preemptible
+	// instances and estimates the resulting cost savings.
+	KindSpotMigrate = "SpotMigrate"
+	// KindComposite chains multiple scenarios sequentially, feeding the output
+	// of each step as input to the next.
+	KindComposite = "Composite"
+)
+
 // Scenario defines a mutation that can be applied to a cluster snapshot.
 type Scenario interface {
 	// Kind returns the scenario type name (e.g., "RightSize", "Consolidate", "SpotMigrate").
@@ -80,7 +97,7 @@ type CompositeScenario struct {
 	Steps []Scenario
 }
 
-func (c *CompositeScenario) Kind() string { return "Composite" }
+func (c *CompositeScenario) Kind() string { return KindComposite }
 
 // Apply applies each step in order. The snapshot is already a deep copy.
 func (c *CompositeScenario) Apply(snap *collector.ClusterSnapshot) (*collector.ClusterSnapshot, error) {

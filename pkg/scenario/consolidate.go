@@ -30,7 +30,7 @@ type ConsolidateScenario struct {
 	TargetAllocatable collector.ResourcePair
 }
 
-func (c *ConsolidateScenario) Kind() string { return "Consolidate" }
+func (c *ConsolidateScenario) Kind() string { return KindConsolidate }
 
 // Apply mutates the snapshot by removing replaceable nodes and adding
 // a single initial virtual node of the target type. The actual bin-packing

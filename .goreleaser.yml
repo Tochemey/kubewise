@@ -65,16 +65,19 @@ release:
   draft: false
   prerelease: auto
 
-homebrew_casks:
+brews:
   - name: kubectl-whatif
     ids:
       - kubectl-whatif
+      - kubectl-whatif-universal
     repository:
       owner: tochemey
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/tochemey/kubewise"
     description: "Kubernetes cost and performance what-if simulator"
+    install: |
+      bin.install "kubectl-whatif"
 
 scoops:
   - name: kubectl-whatif
@@ -95,6 +98,7 @@ krews:
     repository:
       owner: tochemey
       name: krew-index
+      token: "{{ .Env.KREW_INDEX_GITHUB_TOKEN }}"
     homepage: "https://github.com/tochemey/kubewise"
     short_description: "Kubernetes cost and performance what-if simulator"
     description: |

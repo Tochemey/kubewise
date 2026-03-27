@@ -20,6 +20,41 @@ import (
 	"github.com/tochemey/kubewise/pkg/collector"
 )
 
+// Limit strategy constants control how container limits are calculated
+// relative to the new right-sized requests.
+const (
+	// LimitStrategyRatio preserves the original request-to-limit ratio when
+	// computing new limits (e.g. if limits were 2x requests, they stay 2x).
+	LimitStrategyRatio = "ratio"
+	// LimitStrategyFixed sets limits equal to the new requests, removing any
+	// headroom between requests and limits.
+	LimitStrategyFixed = "fixed"
+	// LimitStrategyUnbounded removes limits entirely (sets them to zero),
+	// allowing containers to consume all available node resources.
+	LimitStrategyUnbounded = "unbounded"
+)
+
+// Percentile constants specify which usage percentile to use as the basis
+// for right-sizing resource requests.
+const (
+	// PercentileP50 uses the 50th percentile (median) of observed usage.
+	PercentileP50 = "p50"
+	// PercentileP90 uses the 90th percentile of observed usage.
+	PercentileP90 = "p90"
+	// PercentileP95 uses the 95th percentile of observed usage.
+	PercentileP95 = "p95"
+	// PercentileP99 uses the 99th percentile of observed usage.
+	PercentileP99 = "p99"
+)
+
+// Resource type constants identify the compute resource being right-sized.
+const (
+	// ResourceCPU identifies the CPU resource dimension (measured in millicores).
+	ResourceCPU = "cpu"
+	// ResourceMemory identifies the memory resource dimension (measured in bytes).
+	ResourceMemory = "memory"
+)
+
 const (
 	// minCPUMillicores is the minimum CPU request floor.
 	minCPUMillicores int64 = 10
@@ -57,7 +92,7 @@ type RightSizeResult struct {
 	Skipped int
 }
 
-func (r *RightSizeScenario) Kind() string { return "RightSize" }
+func (r *RightSizeScenario) Kind() string { return KindRightSize }
 
 // Apply mutates the snapshot by adjusting container requests and limits
 // based on actual usage percentiles. The snapshot is already a deep copy.
@@ -80,8 +115,8 @@ func (r *RightSizeScenario) Apply(snap *collector.ClusterSnapshot) (*collector.C
 				continue
 			}
 
-			targetCPU := percentileValue(profile, r.Percentile, "cpu")
-			targetMem := percentileValue(profile, r.Percentile, "memory")
+			targetCPU := percentileValue(profile, r.Percentile, ResourceCPU)
+			targetMem := percentileValue(profile, r.Percentile, ResourceMemory)
 
 			// Apply buffer
 			newRequestCPU := applyBuffer(targetCPU, r.Buffer)
@@ -136,8 +171,8 @@ func (r *RightSizeScenario) ApplyWithChanges(snap *collector.ClusterSnapshot) (*
 			origLimitCPU := container.Limits.CPU
 			origLimitMem := container.Limits.Memory
 
-			targetCPU := percentileValue(profile, r.Percentile, "cpu")
-			targetMem := percentileValue(profile, r.Percentile, "memory")
+			targetCPU := percentileValue(profile, r.Percentile, ResourceCPU)
+			targetMem := percentileValue(profile, r.Percentile, ResourceMemory)
 
 			newRequestCPU := max(applyBuffer(targetCPU, r.Buffer), minCPUMillicores)
 			newRequestMem := max(applyBuffer(targetMem, r.Buffer), minMemoryBytes)
@@ -174,12 +209,12 @@ func (r *RightSizeScenario) ApplyWithChanges(snap *collector.ClusterSnapshot) (*
 
 func (r *RightSizeScenario) validate() error {
 	switch r.Percentile {
-	case "p50", "p90", "p95", "p99":
+	case PercentileP50, PercentileP90, PercentileP95, PercentileP99:
 	default:
 		return fmt.Errorf("invalid percentile %q: must be p50, p90, p95, or p99", r.Percentile)
 	}
 	switch r.LimitStrategy {
-	case "ratio", "fixed", "unbounded", "":
+	case LimitStrategyRatio, LimitStrategyFixed, LimitStrategyUnbounded, "":
 	default:
 		return fmt.Errorf("invalid limit strategy %q: must be ratio, fixed, or unbounded", r.LimitStrategy)
 	}
@@ -189,21 +224,21 @@ func (r *RightSizeScenario) validate() error {
 // percentileValue returns the CPU or memory percentile value from a usage profile.
 func percentileValue(profile collector.ContainerUsageProfile, percentile, resource string) int64 {
 	switch {
-	case percentile == "p50" && resource == "cpu":
+	case percentile == PercentileP50 && resource == ResourceCPU:
 		return profile.P50CPU
-	case percentile == "p90" && resource == "cpu":
+	case percentile == PercentileP90 && resource == ResourceCPU:
 		return profile.P90CPU
-	case percentile == "p95" && resource == "cpu":
+	case percentile == PercentileP95 && resource == ResourceCPU:
 		return profile.P95CPU
-	case percentile == "p99" && resource == "cpu":
+	case percentile == PercentileP99 && resource == ResourceCPU:
 		return profile.P99CPU
-	case percentile == "p50" && resource == "memory":
+	case percentile == PercentileP50 && resource == ResourceMemory:
 		return profile.P50Memory
-	case percentile == "p90" && resource == "memory":
+	case percentile == PercentileP90 && resource == ResourceMemory:
 		return profile.P90Memory
-	case percentile == "p95" && resource == "memory":
+	case percentile == PercentileP95 && resource == ResourceMemory:
 		return profile.P95Memory
-	case percentile == "p99" && resource == "memory":
+	case percentile == PercentileP99 && resource == ResourceMemory:
 		return profile.P99Memory
 	default:
 		return 0
@@ -218,11 +253,11 @@ func applyBuffer(value int64, bufferPercent int) int64 {
 // computeLimits calculates new limits based on the chosen strategy.
 func computeLimits(origRequests, origLimits collector.ResourcePair, newCPU, newMem int64, strategy string) (int64, int64) {
 	switch strategy {
-	case "fixed":
+	case LimitStrategyFixed:
 		return newCPU, newMem
-	case "unbounded":
+	case LimitStrategyUnbounded:
 		return 0, 0
-	case "ratio", "":
+	case LimitStrategyRatio, "":
 		cpuLimit := computeRatioLimit(origRequests.CPU, origLimits.CPU, newCPU)
 		memLimit := computeRatioLimit(origRequests.Memory, origLimits.Memory, newMem)
 		return cpuLimit, memLimit

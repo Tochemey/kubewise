@@ -19,28 +19,83 @@ import (
 	"strings"
 )
 
+// Instance family prefix constants identify cloud provider instance type families
+// used to look up approximate spot/preemptible interruption rates.
+const (
+	// familyGeneralPurpose is the AWS M-family prefix for general-purpose instances
+	// offering a balance of compute, memory, and networking (e.g. m5.xlarge).
+	familyGeneralPurpose = "m"
+	// familyComputeOptimized is the AWS C-family prefix for compute-optimized instances
+	// suited for CPU-intensive workloads (e.g. c5.2xlarge).
+	familyComputeOptimized = "c"
+	// familyMemoryOptimized is the AWS R-family prefix for memory-optimized instances
+	// designed for large in-memory datasets (e.g. r6i.large).
+	familyMemoryOptimized = "r"
+	// familyBurstable is the AWS T-family prefix for burstable instances that provide
+	// a baseline CPU with the ability to burst above it (e.g. t3.medium).
+	familyBurstable = "t"
+	// familyStorageOptimized is the AWS I-family prefix for storage-optimized instances
+	// providing high sequential read/write access to large datasets (e.g. i3.xlarge).
+	familyStorageOptimized = "i"
+	// familyDenseStorage is the AWS D-family prefix for dense-storage instances
+	// designed for massively parallel processing and data warehousing (e.g. d2.xlarge).
+	familyDenseStorage = "d"
+	// familyGPU_P is the AWS P-family prefix for GPU-accelerated instances optimized
+	// for machine learning training and HPC (e.g. p3.2xlarge).
+	familyGPU_P = "p"
+	// familyGPU_G is the AWS G-family prefix for GPU-accelerated instances optimized
+	// for graphics-intensive applications and inference (e.g. g4dn.xlarge).
+	familyGPU_G = "g"
+	// familyMemoryIntensive is the AWS X-family prefix for memory-intensive instances
+	// providing the highest memory-to-CPU ratio (e.g. x1.16xlarge).
+	familyMemoryIntensive = "x"
+	// familyHighFrequency is the AWS Z-family prefix for high-frequency instances
+	// offering sustained all-core turbo clock speeds (e.g. z1d.large).
+	familyHighFrequency = "z"
+	// familyARM is the AWS A-family prefix for ARM-based (Graviton) instances
+	// providing cost-effective performance for scale-out workloads (e.g. a1.medium).
+	familyARM = "a"
+
+	// familyGCPN2 is the GCP N2-family prefix for general-purpose VMs running on
+	// Intel Cascade Lake processors.
+	familyGCPN2 = "n2"
+	// familyGCPN1 is the GCP N1-family prefix for general-purpose VMs, the
+	// first generation of GCP machine types.
+	familyGCPN1 = "n1"
+	// familyGCPE2 is the GCP E2-family prefix for cost-optimized VMs that offer
+	// shared-core and whole-core configurations.
+	familyGCPE2 = "e2"
+	// familyGCPN2D is the GCP N2D-family prefix for general-purpose VMs running on
+	// AMD EPYC processors.
+	familyGCPN2D = "n2d"
+
+	// defaultInterruptionRate is the fallback monthly interruption probability used
+	// when the instance type family is not recognized in spotInterruptionRates.
+	defaultInterruptionRate = 0.05
+)
+
+// gcpPrefixes lists multi-char GCP prefixes in longest-first order for matching.
+var gcpPrefixes = []string{familyGCPN2D, familyGCPN2, familyGCPN1, familyGCPE2}
+
 // spotInterruptionRates maps instance type family prefixes to monthly interruption rates.
 // These are approximate historical rates for AWS spot instances.
 var spotInterruptionRates = map[string]float64{
-	"m":   0.05, // general purpose: ~5%
-	"c":   0.08, // compute optimized: ~8%
-	"r":   0.06, // memory optimized: ~6%
-	"t":   0.15, // burstable: ~15%
-	"i":   0.07, // storage optimized: ~7%
-	"d":   0.07, // dense storage: ~7%
-	"p":   0.10, // GPU: ~10%
-	"g":   0.10, // GPU: ~10%
-	"x":   0.04, // memory intensive: ~4%
-	"z":   0.03, // high frequency: ~3%
-	"a":   0.06, // ARM: ~6%
-	"n2":  0.05, // GCP N2: ~5%
-	"n1":  0.06, // GCP N1: ~6%
-	"e2":  0.04, // GCP E2: ~4%
-	"n2d": 0.05, // GCP N2D: ~5%
+	familyGeneralPurpose:   0.05, // general purpose: ~5%
+	familyComputeOptimized: 0.08, // compute optimized: ~8%
+	familyMemoryOptimized:  0.06, // memory optimized: ~6%
+	familyBurstable:        0.15, // burstable: ~15%
+	familyStorageOptimized: 0.07, // storage optimized: ~7%
+	familyDenseStorage:     0.07, // dense storage: ~7%
+	familyGPU_P:            0.10, // GPU: ~10%
+	familyGPU_G:            0.10, // GPU: ~10%
+	familyMemoryIntensive:  0.04, // memory intensive: ~4%
+	familyHighFrequency:    0.03, // high frequency: ~3%
+	familyARM:              0.06, // ARM: ~6%
+	familyGCPN2:            0.05, // GCP N2: ~5%
+	familyGCPN1:            0.06, // GCP N1: ~6%
+	familyGCPE2:            0.04, // GCP E2: ~4%
+	familyGCPN2D:           0.05, // GCP N2D: ~5%
 }
-
-// defaultInterruptionRate is used when the instance type family is not recognized.
-const defaultInterruptionRate = 0.05
 
 // SpotEvictionRisk calculates the risk that ALL replicas of a workload
 // are interrupted simultaneously on spot instances.
@@ -61,7 +116,7 @@ func lookupInterruptionRate(instanceType string) float64 {
 	it := strings.ToLower(instanceType)
 
 	// Try multi-char prefixes first
-	for _, prefix := range []string{"n2d", "n2", "n1", "e2"} {
+	for _, prefix := range gcpPrefixes {
 		if strings.HasPrefix(it, prefix) {
 			return spotInterruptionRates[prefix]
 		}
