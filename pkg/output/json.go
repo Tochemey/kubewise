@@ -61,16 +61,20 @@ type jsonWorkload struct {
 }
 
 type jsonNamespace struct {
-	Namespace string           `json:"namespace"`
-	Savings   float64          `json:"savings"`
-	RiskLevel string           `json:"riskLevel"`
-	Workloads []jsonNSWorkload `json:"workloads,omitempty"`
+	Namespace       string           `json:"namespace"`
+	MonthlyCost     float64          `json:"monthlyCost,omitempty"`
+	Savings         float64          `json:"savings"`
+	CPURequested    int64            `json:"cpuRequested,omitempty"`
+	MemoryRequested int64            `json:"memoryRequested,omitempty"`
+	RiskLevel       string           `json:"riskLevel"`
+	Workloads       []jsonNSWorkload `json:"workloads,omitempty"`
 }
 
 type jsonNSWorkload struct {
-	Name      string  `json:"name"`
-	Savings   float64 `json:"savings"`
-	RiskLevel string  `json:"riskLevel"`
+	Name        string  `json:"name"`
+	MonthlyCost float64 `json:"monthlyCost,omitempty"`
+	Savings     float64 `json:"savings"`
+	RiskLevel   string  `json:"riskLevel"`
 }
 
 // RenderJSON writes the report as indented JSON to the writer.
@@ -127,15 +131,19 @@ func toJSONReport(report Report) jsonReport {
 
 	for _, ns := range report.NamespaceBreakdown {
 		jns := jsonNamespace{
-			Namespace: ns.Namespace,
-			Savings:   roundTo2(ns.Savings),
-			RiskLevel: riskLevelString(ns.RiskLevel),
+			Namespace:       ns.Namespace,
+			MonthlyCost:     roundTo2(ns.MonthlyCost),
+			Savings:         roundTo2(ns.Savings),
+			CPURequested:    ns.CPURequested,
+			MemoryRequested: ns.MemoryRequested,
+			RiskLevel:       riskLevelString(ns.RiskLevel),
 		}
 		for _, wl := range ns.Workloads {
 			jns.Workloads = append(jns.Workloads, jsonNSWorkload{
-				Name:      wl.Name,
-				Savings:   roundTo2(wl.Savings),
-				RiskLevel: riskLevelString(wl.RiskLevel),
+				Name:        wl.Name,
+				MonthlyCost: roundTo2(wl.MonthlyCost),
+				Savings:     roundTo2(wl.Savings),
+				RiskLevel:   riskLevelString(wl.RiskLevel),
 			})
 		}
 		jr.NamespaceBreakdown = append(jr.NamespaceBreakdown, jns)

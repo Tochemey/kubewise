@@ -6,11 +6,14 @@ inputs:
     description: 'Base64-encoded kubeconfig'
     required: true
   scenario:
-    description: 'Scenario type: rightsize, consolidate, spot'
+    description: 'Scenario type: rightsize, consolidate, spot, snapshot'
     required: true
     default: 'rightsize'
   scenario-file:
     description: 'Path to scenario YAML file (overrides scenario type)'
+    required: false
+  save:
+    description: 'Save snapshot to JSON file (snapshot scenario only)'
     required: false
   percentile:
     description: 'Usage percentile for right-sizing'
@@ -70,6 +73,7 @@ runs:
         INPUT_DISCOUNT: ${{ inputs.discount }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
+        INPUT_SAVE: ${{ inputs.save }}
       run: ${{ github.action_path }}/entrypoint.sh
 
     - name: Post PR comment

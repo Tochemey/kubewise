@@ -53,8 +53,14 @@ else
                 "--discount=${INPUT_DISCOUNT}"
                 "${CMD_ARGS[@]}")
             ;;
+        snapshot)
+            CMD_ARGS=("snapshot" "${CMD_ARGS[@]}")
+            if [[ -n "${INPUT_SAVE:-}" ]]; then
+                CMD_ARGS+=("--save=${INPUT_SAVE}")
+            fi
+            ;;
         *)
-            echo "::error::Unknown scenario type: ${INPUT_SCENARIO}. Use rightsize, consolidate, or spot."
+            echo "::error::Unknown scenario type: ${INPUT_SCENARIO}. Use rightsize, consolidate, spot, or snapshot."
             exit 1
             ;;
     esac

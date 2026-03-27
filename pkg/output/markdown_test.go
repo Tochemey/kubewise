@@ -145,6 +145,21 @@ func TestRenderMarkdownNonVerboseHidesWorkloads(t *testing.T) {
 	assert.NotContains(t, buf.String(), "hidden-workload")
 }
 
+func TestRenderMarkdownSortsByNamespaceSavings(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderMarkdown(&buf, newTestReport())
+	require.NoError(t, err)
+
+	output := buf.String()
+	// api ($1200) should appear before data-pipeline ($980) and default ($640)
+	apiIdx := indexOf(output, "| api |")
+	pipelineIdx := indexOf(output, "| data-pipeline |")
+	defaultIdx := indexOf(output, "| default |")
+
+	assert.Less(t, apiIdx, pipelineIdx)
+	assert.Less(t, pipelineIdx, defaultIdx)
+}
+
 func TestRenderMarkdownEmptyNamespaces(t *testing.T) {
 	var buf bytes.Buffer
 	report := newTestReport()

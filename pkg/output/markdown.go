@@ -17,6 +17,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/tochemey/kubewise/pkg/risk"
@@ -44,31 +45,76 @@ func RenderMarkdown(w io.Writer, report Report) error {
 
 	// Namespace breakdown in collapsible sections
 	if len(report.NamespaceBreakdown) > 0 {
+		// Sort by cost descending for panel layout, savings descending otherwise
+		sorted := make([]NamespaceSummary, len(report.NamespaceBreakdown))
+		copy(sorted, report.NamespaceBreakdown)
+		if report.Layout == LayoutPanel {
+			sort.Slice(sorted, func(i, j int) bool {
+				return sorted[i].MonthlyCost > sorted[j].MonthlyCost
+			})
+		} else {
+			sort.Slice(sorted, func(i, j int) bool {
+				return sorted[i].Savings > sorted[j].Savings
+			})
+		}
+
+		hasCost := report.Layout == LayoutPanel
+
 		sb.WriteString("<details>\n")
-		sb.WriteString("<summary>Savings by namespace</summary>\n\n")
-		sb.WriteString("| Namespace | Savings | Risk |\n")
-		sb.WriteString("|-----------|---------|------|\n")
-		for _, ns := range report.NamespaceBreakdown {
-			fmt.Fprintf(&sb, "| %s | %s/mo | %s |\n",
-				ns.Namespace,
-				formatCost(ns.Savings),
-				mdRiskBadge(ns.RiskLevel),
-			)
+		if hasCost {
+			sb.WriteString("<summary>Cost by namespace</summary>\n\n")
+			sb.WriteString("| Namespace | Monthly Cost | CPU | Memory | Risk |\n")
+			sb.WriteString("|-----------|-------------|-----|--------|------|\n")
+			for _, ns := range sorted {
+				fmt.Fprintf(&sb, "| %s | %s | %s | %s | %s |\n",
+					ns.Namespace,
+					formatCost(ns.MonthlyCost),
+					formatCPU(ns.CPURequested),
+					formatMemory(ns.MemoryRequested),
+					mdRiskBadge(ns.RiskLevel),
+				)
+			}
+		} else {
+			sb.WriteString("<summary>Savings by namespace</summary>\n\n")
+			sb.WriteString("| Namespace | Savings | Risk |\n")
+			sb.WriteString("|-----------|---------|------|\n")
+			for _, ns := range sorted {
+				fmt.Fprintf(&sb, "| %s | %s/mo | %s |\n",
+					ns.Namespace,
+					formatCost(ns.Savings),
+					mdRiskBadge(ns.RiskLevel),
+				)
+			}
 		}
 
 		// Per-workload details if verbose
 		if report.Verbose {
 			sb.WriteString("\n### Workload details\n\n")
-			sb.WriteString("| Namespace | Workload | Savings | Risk |\n")
-			sb.WriteString("|-----------|----------|---------|------|\n")
-			for _, ns := range report.NamespaceBreakdown {
-				for _, wl := range ns.Workloads {
-					fmt.Fprintf(&sb, "| %s | %s | %s/mo | %s |\n",
-						ns.Namespace,
-						wl.Name,
-						formatCost(wl.Savings),
-						mdRiskBadge(wl.RiskLevel),
-					)
+			if hasCost {
+				sb.WriteString("| Namespace | Workload | Monthly Cost | Risk |\n")
+				sb.WriteString("|-----------|----------|-------------|------|\n")
+				for _, ns := range sorted {
+					for _, wl := range ns.Workloads {
+						fmt.Fprintf(&sb, "| %s | %s | %s | %s |\n",
+							ns.Namespace,
+							wl.Name,
+							formatCost(wl.MonthlyCost),
+							mdRiskBadge(wl.RiskLevel),
+						)
+					}
+				}
+			} else {
+				sb.WriteString("| Namespace | Workload | Savings | Risk |\n")
+				sb.WriteString("|-----------|----------|---------|------|\n")
+				for _, ns := range sorted {
+					for _, wl := range ns.Workloads {
+						fmt.Fprintf(&sb, "| %s | %s | %s/mo | %s |\n",
+							ns.Namespace,
+							wl.Name,
+							formatCost(wl.Savings),
+							mdRiskBadge(wl.RiskLevel),
+						)
+					}
 				}
 			}
 		}

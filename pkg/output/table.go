@@ -19,6 +19,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -36,6 +37,14 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1)
+)
+
+// Layout controls how the table renderer displays the report.
+const (
+	// LayoutFlat renders a single bordered table (default).
+	LayoutFlat = ""
+	// LayoutPanel renders each namespace as a separate bordered panel.
+	LayoutPanel = "panel"
 )
 
 // Report captures everything needed to render simulation output.
@@ -60,14 +69,22 @@ type Report struct {
 	Verbose bool
 	// NoColor disables terminal colors.
 	NoColor bool
+	// Layout controls the table rendering style ("" = flat, "panel" = stacked panels).
+	Layout string
 }
 
 // NamespaceSummary holds per-namespace cost and risk data.
 type NamespaceSummary struct {
 	// Namespace is the namespace name.
 	Namespace string
+	// MonthlyCost is the allocated monthly cost for this namespace.
+	MonthlyCost float64
 	// Savings is the monthly savings for this namespace.
 	Savings float64
+	// CPURequested is the total CPU requested in millicores.
+	CPURequested int64
+	// MemoryRequested is the total memory requested in bytes.
+	MemoryRequested int64
 	// RiskLevel is the worst risk level in this namespace.
 	RiskLevel risk.RiskLevel
 	// Workloads are the per-workload details (populated when verbose=true).
@@ -78,6 +95,8 @@ type NamespaceSummary struct {
 type WorkloadSummary struct {
 	// Name is the workload name.
 	Name string
+	// MonthlyCost is the allocated monthly cost for this workload.
+	MonthlyCost float64
 	// Savings is the monthly savings for this workload.
 	Savings float64
 	// RiskLevel is the risk level for this workload.
@@ -85,7 +104,15 @@ type WorkloadSummary struct {
 }
 
 // RenderTable renders a rich terminal table to the writer.
+// When report.Layout is LayoutPanel, it delegates to RenderPanels.
 func RenderTable(w io.Writer, report Report) error {
+	if report.Layout == LayoutPanel {
+		return RenderPanels(w, report)
+	}
+	return renderFlatTable(w, report)
+}
+
+func renderFlatTable(w io.Writer, report Report) error {
 	var sb strings.Builder
 
 	// Header
@@ -126,25 +153,27 @@ func RenderTable(w io.Writer, report Report) error {
 			return sorted[i].Savings > sorted[j].Savings
 		})
 
+		var tbl strings.Builder
+		tw := tabwriter.NewWriter(&tbl, 0, 0, 4, ' ', 0)
 		for _, ns := range sorted {
-			line := fmt.Sprintf("    %-20s %s/mo saved    risk: %s",
+			fmt.Fprintf(tw, "    %s\t%s/mo saved\trisk: %s\n",
 				ns.Namespace,
 				formatCost(ns.Savings),
 				RenderRiskIndicator(ns.RiskLevel, report.NoColor),
 			)
-			sb.WriteString(line + "\n")
 
 			if report.Verbose && len(ns.Workloads) > 0 {
 				for _, wl := range ns.Workloads {
-					wlLine := fmt.Sprintf("      %-18s %s/mo saved  risk: %s",
+					fmt.Fprintf(tw, "      %s\t%s/mo saved\trisk: %s\n",
 						wl.Name,
 						formatCost(wl.Savings),
 						RenderRiskIndicator(wl.RiskLevel, report.NoColor),
 					)
-					sb.WriteString(wlLine + "\n")
 				}
 			}
 		}
+		tw.Flush()
+		sb.WriteString(tbl.String())
 	}
 
 	// Wrap in border

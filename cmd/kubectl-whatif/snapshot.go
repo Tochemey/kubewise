@@ -21,12 +21,13 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/klog/v2"
+
 	"github.com/tochemey/kubewise/internal/kube"
 	"github.com/tochemey/kubewise/pkg/collector"
 	"github.com/tochemey/kubewise/pkg/output"
 	"github.com/tochemey/kubewise/pkg/pricing"
 	"github.com/tochemey/kubewise/pkg/risk"
-	"k8s.io/klog/v2"
 )
 
 var snapshotSavePath string
@@ -97,6 +98,7 @@ func collectClusterSnapshot(ctx context.Context) (*collector.ClusterSnapshot, er
 	if prometheusURL == "" {
 		prometheusURL = collector.DiscoverPrometheusURL(ctx, clientset)
 	}
+
 	if prometheusURL != "" {
 		profiles, pErr := collector.CollectPrometheusUsage(ctx, prometheusURL, snap.Pods, 14*24*time.Hour)
 		if pErr != nil {
@@ -162,14 +164,25 @@ func buildSnapshotReport(snap *collector.ClusterSnapshot) output.Report {
 	// Per-namespace cost allocation (proportional to CPU requests)
 	nsCosts := computeNamespaceCosts(snap, totalMonthlyCost)
 
+	// Per-namespace resource totals
+	nsResources := computeNamespaceResources(snap)
+
+	// Per-workload cost allocation within each namespace
+	nsWorkloads := computeWorkloadCosts(snap, nsCosts)
+
 	var nsSummaries []output.NamespaceSummary
 	for ns, cost := range nsCosts {
-		nsSummaries = append(nsSummaries, output.NamespaceSummary{
-			Namespace: ns,
-			Savings:   0, // snapshot shows current state, no savings
-			RiskLevel: risk.RiskGreen,
-		})
-		_ = cost // used for future detailed output
+		res := nsResources[ns]
+		summary := output.NamespaceSummary{
+			Namespace:       ns,
+			MonthlyCost:     cost,
+			Savings:         0,
+			CPURequested:    res.cpu,
+			MemoryRequested: res.memory,
+			RiskLevel:       risk.RiskGreen,
+			Workloads:       nsWorkloads[ns],
+		}
+		nsSummaries = append(nsSummaries, summary)
 	}
 
 	return output.Report{
@@ -183,7 +196,63 @@ func buildSnapshotReport(snap *collector.ClusterSnapshot) output.Report {
 		NamespaceBreakdown: nsSummaries,
 		Verbose:            verbose,
 		NoColor:            noColor,
+		Layout:             output.LayoutPanel,
 	}
+}
+
+type nsResources struct {
+	cpu    int64
+	memory int64
+}
+
+func computeNamespaceResources(snap *collector.ClusterSnapshot) map[string]nsResources {
+	result := make(map[string]nsResources)
+	for _, pod := range snap.Pods {
+		res := result[pod.Namespace]
+		for _, c := range pod.Containers {
+			res.cpu += c.Requests.CPU
+			res.memory += c.Requests.Memory
+		}
+		result[pod.Namespace] = res
+	}
+	return result
+}
+
+func computeWorkloadCosts(snap *collector.ClusterSnapshot, nsCosts map[string]float64) map[string][]output.WorkloadSummary {
+	// Aggregate CPU requests per workload (owner reference name) within each namespace
+	type workloadKey struct {
+		namespace string
+		name      string
+	}
+	wlCPU := make(map[workloadKey]int64)
+	nsCPU := make(map[string]int64)
+
+	for _, pod := range snap.Pods {
+		wlName := pod.OwnerRef.Name
+		if wlName == "" {
+			wlName = pod.Name
+		}
+		key := workloadKey{namespace: pod.Namespace, name: wlName}
+		for _, c := range pod.Containers {
+			wlCPU[key] += c.Requests.CPU
+			nsCPU[pod.Namespace] += c.Requests.CPU
+		}
+	}
+
+	result := make(map[string][]output.WorkloadSummary)
+	for key, cpu := range wlCPU {
+		totalNsCPU := nsCPU[key.namespace]
+		if totalNsCPU == 0 {
+			continue
+		}
+		cost := nsCosts[key.namespace] * float64(cpu) / float64(totalNsCPU)
+		result[key.namespace] = append(result[key.namespace], output.WorkloadSummary{
+			Name:        key.name,
+			MonthlyCost: cost,
+			RiskLevel:   risk.RiskGreen,
+		})
+	}
+	return result
 }
 
 func computeNamespaceCosts(snap *collector.ClusterSnapshot, totalCost float64) map[string]float64 {

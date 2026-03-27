@@ -73,23 +73,116 @@ kubectl krew install whatif
 go install github.com/tochemey/kubewise/cmd/kubectl-whatif@latest
 ```
 
-### Run
+### Global Flags
+
+These flags apply to all commands:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--kubeconfig` | `~/.kube/config` | Path to kubeconfig file |
+| `--context` | current context | Kubernetes context to use |
+| `--namespace` | all | Limit to specific namespace |
+| `--prometheus-url` | auto-detect | Prometheus endpoint for historical metrics |
+| `--output`, `-o` | `table` | Output format: `table`, `json`, `markdown` |
+| `--verbose` | `false` | Show detailed per-workload breakdown |
+| `--no-color` | `false` | Disable terminal colors |
+
+## 📸 Snapshot — See Current Cost Breakdown
+
+Snapshot captures the live cluster state and displays the current cost breakdown per namespace using a stacked-panel layout.
 
 ```bash
-# See current cost breakdown
+# Basic snapshot
 kubectl whatif snapshot
 
-# Simulate right-sizing
-kubectl whatif rightsize --percentile=p95 --buffer=20
+# Save snapshot to file for later use
+kubectl whatif snapshot --save=cluster-snapshot.json
 
-# Simulate node consolidation
-kubectl whatif consolidate --node-type=m6i.xlarge
+# JSON output for scripting
+kubectl whatif snapshot --output=json
 
-# Simulate spot migration
-kubectl whatif spot --min-replicas=2 --discount=0.65
+# Limit to a single namespace
+kubectl whatif snapshot --namespace=api
 ```
 
-### Example output
+Example output (each namespace is displayed as a separate panel):
+
+```
+KubeWise: Snapshot of current cluster cost breakdown
+
+  Total monthly cost:    $14230
+  Cluster OOM risk:      0.8%  low
+  Overall risk:          low
+  Namespaces:            3
+
+--------------------------------------------
+  api
+
+  Monthly cost:    $1200
+  CPU requested:   4 cores
+  Mem requested:   8 Gi
+  Risk:            low
+
+  Workloads:
+    api-gateway    $800.00     low
+    api-auth       $400.00     low
+
+--------------------------------------------
+  data-pipeline
+
+  Monthly cost:    $980
+  CPU requested:   2.5 cores
+  Mem requested:   12 Gi
+  Risk:            moderate
+
+  Workloads:
+    etl            $980.00     moderate
+
+--------------------------------------------
+  default
+
+  Monthly cost:    $640
+  CPU requested:   1 cores
+  Mem requested:   2 Gi
+  Risk:            low
+
+  Workloads:
+    web            $640.00     low
+```
+
+## 📉 Right-Size — Simulate Resource Optimization
+
+Right-sizes pod resource requests based on actual usage percentiles with a configurable safety buffer.
+
+```bash
+# Default: p95 percentile + 20% buffer
+kubectl whatif rightsize
+
+# Conservative: p99 percentile + 30% buffer
+kubectl whatif rightsize --percentile=p99 --buffer=30
+
+# Aggressive: p90 percentile + 10% buffer
+kubectl whatif rightsize --percentile=p90 --buffer=10
+
+# Scope to specific namespaces
+kubectl whatif rightsize --scope-namespaces=api,data-pipeline
+
+# Exclude system namespaces
+kubectl whatif rightsize --exclude-namespaces=kube-system,monitoring
+
+# Show per-workload details
+kubectl whatif rightsize --verbose
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--percentile` | `p95` | Usage percentile: `p50`, `p90`, `p95`, `p99` |
+| `--buffer` | `20` | Buffer percentage above the percentile |
+| `--scope-namespaces` | all | Comma-separated namespaces to include |
+| `--exclude-namespaces` | none | Comma-separated namespaces to exclude |
+| `--limit-strategy` | none | How to set limits: `ratio`, `fixed`, or empty |
+
+Example output:
 
 ```
 KubeWise: Right-size simulation (p95 + 20% buffer)
@@ -107,17 +200,60 @@ KubeWise: Right-size simulation (p95 + 20% buffer)
     auth-service         $700/mo saved     risk: low
 ```
 
-## 📁 Output Formats
+## 🔗 Consolidate — Simulate Node Pool Consolidation
+
+Simulates consolidating workloads onto fewer or different node types using bin-packing.
 
 ```bash
-kubectl whatif rightsize                    # Terminal table (default)
-kubectl whatif rightsize --output=json      # JSON for scripting
-kubectl whatif rightsize --output=markdown  # Markdown for PR comments
+# Consolidate to a specific instance type
+kubectl whatif consolidate --node-type=m6i.xlarge
+
+# Cap the number of nodes
+kubectl whatif consolidate --node-type=m6i.2xlarge --max-nodes=10
+
+# Keep an existing node pool
+kubectl whatif consolidate --node-type=m6i.xlarge --keep-pool=critical-pool
 ```
 
-## 📝 Scenario Files
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--node-type` | required | Target instance type for consolidation |
+| `--max-nodes` | unlimited | Maximum number of nodes in the new pool |
+| `--keep-pool` | none | Existing node pool to preserve |
+| `--target-cpu` | `0.8` | Target CPU utilization ratio |
+| `--target-memory` | `0.8` | Target memory utilization ratio |
 
-Define reusable scenarios as YAML files:
+## 💰 Spot — Simulate Spot Instance Migration
+
+Estimates savings from migrating eligible workloads to spot instances, with per-workload eviction risk scoring.
+
+```bash
+# Default: workloads with >=2 replicas, 65% discount
+kubectl whatif spot
+
+# More aggressive: include single-replica workloads
+kubectl whatif spot --min-replicas=1
+
+# Custom discount rate
+kubectl whatif spot --discount=0.70
+
+# Exclude specific namespaces
+kubectl whatif spot --exclude-namespaces=kube-system,databases
+
+# With detailed risk breakdown
+kubectl whatif spot --verbose
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--min-replicas` | `2` | Minimum replicas for spot eligibility |
+| `--discount` | `0.65` | Spot discount fraction (0.0 - 1.0) |
+| `--exclude-namespaces` | none | Comma-separated namespaces to exclude |
+| `--controller-types` | `Deployment,ReplicaSet` | Controller types eligible for spot |
+
+## 📝 Scenario Files — Define Reusable Scenarios
+
+Define scenarios as YAML files for repeatability and version control:
 
 ```yaml
 apiVersion: kubewise.io/v1alpha1
@@ -137,24 +273,134 @@ spec:
 ```
 
 ```bash
+# Apply a single scenario
 kubectl whatif apply -f scenario.yaml
-kubectl whatif compare -f scenario-a.yaml -f scenario-b.yaml
+
+# Compare multiple scenarios side by side
+kubectl whatif compare -f aggressive.yaml -f conservative.yaml
 ```
 
 See [docs/scenarios.md](docs/scenarios.md) for all scenario types and options.
 
+## 📁 Output Formats
+
+All commands support three output formats:
+
+```bash
+kubectl whatif rightsize                    # Terminal table (default)
+kubectl whatif rightsize --output=json      # JSON for scripting
+kubectl whatif rightsize --output=markdown  # Markdown for PR comments
+```
+
+The `snapshot` command uses a stacked-panel layout in table mode, showing each namespace as a bordered panel with cost, resource, and workload details. JSON and markdown outputs include the same data in their respective formats.
+
 ## 🤖 CI/CD Integration
 
-Add to your GitHub workflow:
+### GitHub Action
+
+Add KubeWise to your GitHub workflow to automatically post cost impact analysis on pull requests:
 
 ```yaml
-- uses: kubewise/action@v1
+# .github/workflows/cost-check.yml
+name: Cost Check
+on:
+  pull_request:
+
+jobs:
+  cost-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: tochemey/kubewise/action@v1
+        with:
+          kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
+          scenario: rightsize
+          percentile: p95
+          buffer: '20'
+          comment: 'true'
+```
+
+### Action Inputs
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `kubeconfig` | yes | — | Base64-encoded kubeconfig |
+| `scenario` | yes | `rightsize` | Scenario type: `rightsize`, `consolidate`, `spot`, `snapshot` |
+| `scenario-file` | no | — | Path to scenario YAML (overrides scenario type) |
+| `percentile` | no | `p95` | Usage percentile (rightsize only) |
+| `buffer` | no | `20` | Buffer percentage (rightsize only) |
+| `node-type` | no | — | Target instance type (consolidate only, required) |
+| `min-replicas` | no | `2` | Minimum replicas for spot eligibility (spot only) |
+| `discount` | no | `0.65` | Spot discount fraction (spot only) |
+| `save` | no | — | Save snapshot to JSON file (snapshot only) |
+| `comment` | no | `true` | Post result as PR comment |
+| `fail-on-risk` | no | `false` | Fail the check if risk is red |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `savings` | Projected monthly savings |
+| `savings-percent` | Projected savings percentage |
+| `risk-level` | Overall risk level (`green`, `amber`, `red`) |
+| `markdown` | Full markdown report |
+
+### Examples
+
+**Right-size on every PR:**
+
+```yaml
+- uses: tochemey/kubewise/action@v1
   with:
-    kubeconfig: ${{ secrets.KUBECONFIG }}
+    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
     scenario: rightsize
-    percentile: p95
-    buffer: 20
-    comment: true
+    comment: 'true'
+```
+
+**Spot migration analysis with risk gate:**
+
+```yaml
+- uses: tochemey/kubewise/action@v1
+  with:
+    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
+    scenario: spot
+    min-replicas: '2'
+    discount: '0.65'
+    fail-on-risk: 'true'
+```
+
+**Cluster cost snapshot:**
+
+```yaml
+- uses: tochemey/kubewise/action@v1
+  with:
+    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
+    scenario: snapshot
+    comment: 'true'
+```
+
+**Custom scenario file:**
+
+```yaml
+- uses: tochemey/kubewise/action@v1
+  with:
+    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
+    scenario-file: scenarios/production-rightsize.yaml
+    comment: 'true'
+    fail-on-risk: 'true'
+```
+
+**Use outputs in downstream steps:**
+
+```yaml
+- uses: tochemey/kubewise/action@v1
+  id: kubewise
+  with:
+    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
+    scenario: rightsize
+
+- run: echo "Projected savings: ${{ steps.kubewise.outputs.savings }}"
 ```
 
 ## 📚 Documentation
