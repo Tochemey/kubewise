@@ -40,12 +40,12 @@ const (
 	// familyDenseStorage is the AWS D-family prefix for dense-storage instances
 	// designed for massively parallel processing and data warehousing (e.g. d2.xlarge).
 	familyDenseStorage = "d"
-	// familyGPU_P is the AWS P-family prefix for GPU-accelerated instances optimized
+	// familyGPUP is the AWS P-family prefix for GPU-accelerated instances optimized
 	// for machine learning training and HPC (e.g. p3.2xlarge).
-	familyGPU_P = "p"
-	// familyGPU_G is the AWS G-family prefix for GPU-accelerated instances optimized
+	familyGPUP = "p"
+	// familyGPUG is the AWS G-family prefix for GPU-accelerated instances optimized
 	// for graphics-intensive applications and inference (e.g. g4dn.xlarge).
-	familyGPU_G = "g"
+	familyGPUG = "g"
 	// familyMemoryIntensive is the AWS X-family prefix for memory-intensive instances
 	// providing the highest memory-to-CPU ratio (e.g. x1.16xlarge).
 	familyMemoryIntensive = "x"
@@ -86,8 +86,8 @@ var spotInterruptionRates = map[string]float64{
 	familyBurstable:        0.15, // burstable: ~15%
 	familyStorageOptimized: 0.07, // storage optimized: ~7%
 	familyDenseStorage:     0.07, // dense storage: ~7%
-	familyGPU_P:            0.10, // GPU: ~10%
-	familyGPU_G:            0.10, // GPU: ~10%
+	familyGPUP:             0.10, // GPU: ~10%
+	familyGPUG:             0.10, // GPU: ~10%
 	familyMemoryIntensive:  0.04, // memory intensive: ~4%
 	familyHighFrequency:    0.03, // high frequency: ~3%
 	familyARM:              0.06, // ARM: ~6%
