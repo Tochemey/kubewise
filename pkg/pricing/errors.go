@@ -53,62 +53,51 @@ func classifyHTTPError(statusCode int, format string, args ...any) error {
 // AWSSetupError returns an actionable error message for AWS pricing failures.
 // It guides the user through network requirements and manual alternatives.
 func AWSSetupError(region string, underlying error) error {
-	return fmt.Errorf(`AWS pricing API failed for region %q.
-
-The AWS Bulk Pricing API does not require credentials for public pricing data.
-If you are behind a corporate proxy or firewall, ensure HTTPS access to:
-  pricing.us-east-1.amazonaws.com
-
-Alternatively, provide pricing data manually:
-  kubectl whatif snapshot --pricing-file pricing.yaml
-
-Underlying error: %w`, region, underlying)
+	return fmt.Errorf("aws pricing API failed for region %q: %w\n\n"+
+		"The AWS Bulk Pricing API does not require credentials for public pricing data.\n"+
+		"If you are behind a corporate proxy or firewall, ensure HTTPS access to:\n"+
+		"  pricing.us-east-1.amazonaws.com\n\n"+
+		"Alternatively, provide pricing data manually:\n"+
+		"  kubectl whatif snapshot --pricing-file pricing.yaml",
+		region, underlying)
 }
 
 // GCPSetupError returns an actionable error message for GCP pricing failures.
 // If the error looks like an auth issue, it provides detailed credential setup
 // instructions including required IAM roles.
 func GCPSetupError(region string, underlying error) error {
-	msg := fmt.Sprintf("GCP pricing API failed for region %q.\n\n", region)
-
+	var guidance string
 	if isAuthError(underlying) {
-		msg += `To configure credentials:
-  1. Install the gcloud CLI: https://cloud.google.com/sdk/docs/install
-  2. Authenticate:  gcloud auth application-default login
-  3. Set a project: gcloud config set project YOUR_PROJECT_ID
-
-Required IAM roles:
-  - roles/billing.viewer   (for pricing data)
-  - roles/compute.viewer   (for machine type specs)
-`
+		guidance = "To configure credentials:\n" +
+			"  1. Install the gcloud CLI: https://cloud.google.com/sdk/docs/install\n" +
+			"  2. Authenticate:  gcloud auth application-default login\n" +
+			"  3. Set a project: gcloud config set project YOUR_PROJECT_ID\n\n" +
+			"Required IAM roles:\n" +
+			"  - roles/billing.viewer   (for pricing data)\n" +
+			"  - roles/compute.viewer   (for machine type specs)\n"
 	} else {
-		msg += `Ensure the following are configured:
-  - GCP credentials: gcloud auth application-default login
-  - Project:         gcloud config set project YOUR_PROJECT_ID
-  - IAM roles:       roles/billing.viewer, roles/compute.viewer
-`
+		guidance = "Ensure the following are configured:\n" +
+			"  - GCP credentials: gcloud auth application-default login\n" +
+			"  - Project:         gcloud config set project YOUR_PROJECT_ID\n" +
+			"  - IAM roles:       roles/billing.viewer, roles/compute.viewer\n"
 	}
 
-	msg += `
-Alternatively, provide pricing data manually:
-  kubectl whatif snapshot --pricing-file pricing.yaml`
-
-	return fmt.Errorf("%s\nUnderlying error: %w", msg, underlying)
+	return fmt.Errorf("gcp pricing API failed for region %q: %w\n\n%s\n"+
+		"Alternatively, provide pricing data manually:\n"+
+		"  kubectl whatif snapshot --pricing-file pricing.yaml",
+		region, underlying, guidance)
 }
 
 // AzureSetupError returns an actionable error message for Azure pricing failures.
 // It guides the user through network requirements and manual alternatives.
 func AzureSetupError(region string, underlying error) error {
-	return fmt.Errorf(`Azure pricing API failed for region %q.
-
-The Azure Retail Prices API is public and does not require credentials.
-If you are behind a corporate proxy or firewall, ensure HTTPS access to:
-  prices.azure.com
-
-Alternatively, provide pricing data manually:
-  kubectl whatif snapshot --pricing-file pricing.yaml
-
-Underlying error: %w`, region, underlying)
+	return fmt.Errorf("azure pricing API failed for region %q: %w\n\n"+
+		"The Azure Retail Prices API is public and does not require credentials.\n"+
+		"If you are behind a corporate proxy or firewall, ensure HTTPS access to:\n"+
+		"  prices.azure.com\n\n"+
+		"Alternatively, provide pricing data manually:\n"+
+		"  kubectl whatif snapshot --pricing-file pricing.yaml",
+		region, underlying)
 }
 
 // isAuthError reports whether err looks like an authentication or authorization

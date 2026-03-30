@@ -103,7 +103,7 @@ func Retry(ctx context.Context, cfg RetryConfig, fn func() error) error {
 			"backoff", backoff, "err", lastErr)
 
 		// Wait with jitter (±25%).
-		jitter := time.Duration(float64(backoff) * (jitterBase + rand.Float64()*jitterRange))
+		jitter := time.Duration(float64(backoff) * (jitterBase + rand.Float64()*jitterRange)) //nolint:gosec // G404: jitter for backoff does not need cryptographic randomness
 		timer := time.NewTimer(jitter)
 		select {
 		case <-ctx.Done():
