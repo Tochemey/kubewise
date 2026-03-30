@@ -25,14 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func buildAWSBulkPricingJSON(instanceType, location string, priceUSD float64) []byte {
+func buildAWSBulkPricingJSON(instanceType, regionCode string, priceUSD float64) []byte {
 	bulk := map[string]any{
 		"products": map[string]any{
 			"sku-001": map[string]any{
 				"sku": "sku-001",
 				"attributes": map[string]string{
 					"instanceType":    instanceType,
-					"location":        location,
+					"regionCode":      regionCode,
 					"operatingSystem": "Linux",
 					"tenancy":         "Shared",
 					"capacitystatus":  "Used",
@@ -71,7 +71,7 @@ func TestAWSProviderHourlyCost(t *testing.T) {
 		"m6i.xlarge":  0.192,
 		"m6i.2xlarge": 0.384,
 	}
-	provider := NewAWSProviderFromPrices(prices, defaultSpotDiscount)
+	provider := NewAWSProviderFromPrices(prices, DefaultSpotDiscount)
 
 	t.Run("on-demand", func(t *testing.T) {
 		cost, err := provider.HourlyCost("m6i.xlarge", "us-east-1", false)
@@ -106,7 +106,7 @@ func TestAWSProviderCustomSpotDiscount(t *testing.T) {
 }
 
 func TestAWSProviderFetchPricing(t *testing.T) {
-	bulkJSON := buildAWSBulkPricingJSON("m6i.xlarge", "US East (N. Virginia)", 0.192)
+	bulkJSON := buildAWSBulkPricingJSON("m6i.xlarge", "us-east-1", 0.192)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -121,14 +121,14 @@ func TestAWSProviderFetchPricing(t *testing.T) {
 
 	p := &AWSProvider{
 		prices:       make(map[string]float64),
-		spotDiscount: defaultSpotDiscount,
+		spotDiscount: DefaultSpotDiscount,
 		httpClient:   server.Client(),
 		region:       "us-east-1",
 	}
 
 	// Override the pricing endpoint by swapping the fetchPricing URL
 	// We test parseBulkPricing directly instead
-	err := p.parseBulkPricing(bulkJSON, "US East (N. Virginia)")
+	err := p.parseBulkPricing(bulkJSON, "us-east-1")
 	require.NoError(t, err)
 
 	cost, err := p.HourlyCost("m6i.xlarge", "us-east-1", false)
@@ -144,7 +144,7 @@ func TestAWSProviderParseBulkPricingFilters(t *testing.T) {
 				"sku": "sku-linux",
 				"attributes": map[string]string{
 					"instanceType":    "m6i.xlarge",
-					"location":        "US East (N. Virginia)",
+					"regionCode":      "us-east-1",
 					"operatingSystem": "Linux",
 					"tenancy":         "Shared",
 					"capacitystatus":  "Used",
@@ -154,7 +154,7 @@ func TestAWSProviderParseBulkPricingFilters(t *testing.T) {
 				"sku": "sku-windows",
 				"attributes": map[string]string{
 					"instanceType":    "m6i.xlarge",
-					"location":        "US East (N. Virginia)",
+					"regionCode":      "us-east-1",
 					"operatingSystem": "Windows",
 					"tenancy":         "Shared",
 					"capacitystatus":  "Used",
@@ -164,7 +164,7 @@ func TestAWSProviderParseBulkPricingFilters(t *testing.T) {
 				"sku": "sku-dedicated",
 				"attributes": map[string]string{
 					"instanceType":    "m6i.xlarge",
-					"location":        "US East (N. Virginia)",
+					"regionCode":      "us-east-1",
 					"operatingSystem": "Linux",
 					"tenancy":         "Dedicated",
 					"capacitystatus":  "Used",
@@ -174,7 +174,7 @@ func TestAWSProviderParseBulkPricingFilters(t *testing.T) {
 				"sku": "sku-wrong-region",
 				"attributes": map[string]string{
 					"instanceType":    "m6i.2xlarge",
-					"location":        "EU (Ireland)",
+					"regionCode":      "eu-west-1",
 					"operatingSystem": "Linux",
 					"tenancy":         "Shared",
 					"capacitystatus":  "Used",
@@ -208,7 +208,7 @@ func TestAWSProviderParseBulkPricingFilters(t *testing.T) {
 	data, _ := json.Marshal(bulk)
 	p := &AWSProvider{prices: make(map[string]float64), region: "us-east-1"}
 
-	err := p.parseBulkPricing(data, "US East (N. Virginia)")
+	err := p.parseBulkPricing(data, "us-east-1")
 	require.NoError(t, err)
 
 	// Only Linux + Shared + correct region should be in prices
@@ -228,14 +228,14 @@ func TestAWSProviderHTTPError(t *testing.T) {
 
 	p := &AWSProvider{
 		prices:       make(map[string]float64),
-		spotDiscount: defaultSpotDiscount,
+		spotDiscount: DefaultSpotDiscount,
 		httpClient:   server.Client(),
 		region:       "us-east-1",
 	}
 
 	// This will fail because we can't override the base URL in fetchPricing easily,
 	// but we can test parseBulkPricing with invalid JSON
-	err := p.parseBulkPricing([]byte("not json"), "US East (N. Virginia)")
+	err := p.parseBulkPricing([]byte("not json"), "us-east-1")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing AWS pricing JSON")
 }

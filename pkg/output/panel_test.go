@@ -169,6 +169,132 @@ func TestRenderPanelsEmptyNamespaces(t *testing.T) {
 	assert.Contains(t, output, "Namespaces:")
 }
 
+// --- Scenario mode tests (savings-focused panels) ---
+
+func newScenarioPanelTestReport() Report {
+	return Report{
+		ScenarioName:   "Right-size simulation",
+		ScenarioDesc:   "Right-size simulation (p95 + 20% buffer)",
+		BaselineCost:   14230,
+		ProjectedCost:  9840,
+		Savings:        4390,
+		SavingsPercent: 30.8,
+		Risk: risk.RiskReport{
+			ClusterOOM:   0.008,
+			OverallLevel: risk.RiskGreen,
+			PerWorkload:  make(map[string]risk.WorkloadRisk),
+		},
+		NamespaceBreakdown: []NamespaceSummary{
+			{
+				Namespace: "api",
+				Savings:   1200,
+				RiskLevel: risk.RiskGreen,
+				Workloads: []WorkloadSummary{
+					{Name: "api-gateway", Savings: 800, RiskLevel: risk.RiskGreen},
+					{Name: "api-auth", Savings: 400, RiskLevel: risk.RiskGreen},
+				},
+			},
+			{
+				Namespace: "data-pipeline",
+				Savings:   980,
+				RiskLevel: risk.RiskAmber,
+				Workloads: []WorkloadSummary{
+					{Name: "etl", Savings: 980, RiskLevel: risk.RiskAmber},
+				},
+			},
+			{
+				Namespace: "default",
+				Savings:   640,
+				RiskLevel: risk.RiskGreen,
+				Workloads: []WorkloadSummary{
+					{Name: "web", Savings: 640, RiskLevel: risk.RiskGreen},
+				},
+			},
+		},
+		NoColor: true,
+		Layout:  LayoutPanel,
+	}
+}
+
+func TestRenderPanelsScenarioShowsSavingsSummary(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderPanels(&buf, newScenarioPanelTestReport())
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Right-size simulation")
+	assert.Contains(t, output, "$14230")
+	assert.Contains(t, output, "$9840")
+	assert.Contains(t, output, "$4390/mo")
+	assert.Contains(t, output, "30.8%")
+	assert.Contains(t, output, "Namespaces:")
+}
+
+func TestRenderPanelsScenarioNamespacesShowSavings(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderPanels(&buf, newScenarioPanelTestReport())
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Savings:")
+	assert.Contains(t, output, "$1200/mo")
+	assert.Contains(t, output, "$980.00/mo")
+	assert.Contains(t, output, "$640.00/mo")
+	// Should NOT show Monthly cost or CPU/Memory for scenario panels
+	assert.NotContains(t, output, "Monthly cost:")
+	assert.NotContains(t, output, "CPU requested:")
+	assert.NotContains(t, output, "Mem requested:")
+}
+
+func TestRenderPanelsScenarioSortsBySavingsDescending(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderPanels(&buf, newScenarioPanelTestReport())
+	require.NoError(t, err)
+
+	output := buf.String()
+	// api ($1200) > data-pipeline ($980) > default ($640)
+	apiIdx := indexOf(output, "$1200")
+	pipelineIdx := indexOf(output, "$980")
+	defaultIdx := indexOf(output, "$640")
+
+	assert.Less(t, apiIdx, pipelineIdx)
+	assert.Less(t, pipelineIdx, defaultIdx)
+}
+
+func TestRenderPanelsScenarioWorkloadsShowSavings(t *testing.T) {
+	var buf bytes.Buffer
+	err := RenderPanels(&buf, newScenarioPanelTestReport())
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "api-gateway")
+	assert.Contains(t, output, "api-auth")
+	assert.Contains(t, output, "etl")
+	assert.Contains(t, output, "/mo saved")
+}
+
+func TestRenderPanelsScenarioWorkloadsRiskOnly(t *testing.T) {
+	// Workloads with neither cost nor savings should still show risk
+	report := newScenarioPanelTestReport()
+	report.NamespaceBreakdown = []NamespaceSummary{
+		{
+			Namespace: "monitoring",
+			RiskLevel: risk.RiskAmber,
+			Workloads: []WorkloadSummary{
+				{Name: "prometheus", RiskLevel: risk.RiskAmber},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := RenderPanels(&buf, report)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "prometheus")
+	assert.Contains(t, output, "moderate")
+}
+
 func TestRenderTableDispatchesToPanels(t *testing.T) {
 	var buf bytes.Buffer
 	report := newPanelTestReport()

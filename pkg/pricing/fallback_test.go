@@ -72,7 +72,7 @@ pricing:
 	// Spot without explicit spot price falls back to discount
 	cost, err := provider.HourlyCost("m6i.xlarge", "", true)
 	require.NoError(t, err)
-	assert.InDelta(t, 0.192*defaultSpotDiscount, cost, 1e-9)
+	assert.InDelta(t, 0.192*DefaultSpotDiscount, cost, 1e-9)
 }
 
 func TestLoadPricingFromFileUnknownInstance(t *testing.T) {

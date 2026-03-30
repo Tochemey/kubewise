@@ -115,10 +115,12 @@ func runSpot(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	report := buildCostReport(ss.Meta, snap, costReport, riskReport, nil)
+	report := buildCostReport(ss.Meta, costReport, riskReport)
 	return output.Render(os.Stdout, report, outputFormat)
 }
 
+// findControllerReplicas returns the desired replica count for the named
+// controller in the given namespace, or 0 if not found.
 func findControllerReplicas(snap *collector.ClusterSnapshot, ns, name string) int32 {
 	for _, ctrl := range snap.Controllers {
 		if ctrl.Namespace == ns && ctrl.Name == name {
@@ -128,6 +130,8 @@ func findControllerReplicas(snap *collector.ClusterSnapshot, ns, name string) in
 	return 0
 }
 
+// findNodeInstanceTypeForNS returns the instance type of the first node running
+// a pod in the given namespace, or a default fallback if none is found.
 func findNodeInstanceTypeForNS(snap *collector.ClusterSnapshot, ns string) string {
 	for _, pod := range snap.Pods {
 		if pod.Namespace == ns && pod.NodeName != "" {
@@ -138,5 +142,5 @@ func findNodeInstanceTypeForNS(snap *collector.ClusterSnapshot, ns string) strin
 			}
 		}
 	}
-	return "m6i.xlarge" // fallback
+	return "" // no instance type found
 }

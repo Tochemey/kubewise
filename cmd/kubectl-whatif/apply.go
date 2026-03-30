@@ -111,6 +111,6 @@ func runApply(cmd *cobra.Command, _ []string) error {
 		meta = ss.Meta
 	}
 
-	report := buildCostReport(meta, snap, costReport, riskReport, simResult)
+	report := buildCostReport(meta, costReport, riskReport)
 	return output.Render(os.Stdout, report, outputFormat)
 }

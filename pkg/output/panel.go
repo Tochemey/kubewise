@@ -25,21 +25,25 @@ import (
 )
 
 // panelTitleStyle renders the namespace name in the panel border.
-var panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
+var panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPanelCyan)
 
 // RenderPanels renders each namespace as a separate bordered panel,
-// preceded by a cluster summary panel.
+// preceded by a cluster summary panel. The panel content adapts based
+// on available data: cost-focused for snapshots, savings-focused for scenarios.
 func RenderPanels(w io.Writer, report Report) error {
 	var sb strings.Builder
 
 	// Cluster summary panel
 	renderSummaryPanel(&sb, report)
 
-	// Sort namespaces by cost descending
+	// Sort namespaces: by cost descending if cost is populated, otherwise by savings descending
 	sorted := make([]NamespaceSummary, len(report.NamespaceBreakdown))
 	copy(sorted, report.NamespaceBreakdown)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].MonthlyCost > sorted[j].MonthlyCost
+		if sorted[i].MonthlyCost != 0 || sorted[j].MonthlyCost != 0 {
+			return sorted[i].MonthlyCost > sorted[j].MonthlyCost
+		}
+		return sorted[i].Savings > sorted[j].Savings
 	})
 
 	// Namespace panels
@@ -65,13 +69,19 @@ func renderSummaryPanel(sb *strings.Builder, report Report) {
 	}
 	body.WriteString("\n\n")
 
-	fmt.Fprintf(&body, "  Total monthly cost:    %s\n", formatCost(report.BaselineCost))
+	fmt.Fprintf(&body, "  Total monthly cost:      %s\n", formatCost(report.BaselineCost))
+
+	// Show projected cost and savings when applicable (scenario mode)
+	if report.Savings != 0 || report.ProjectedCost != report.BaselineCost {
+		fmt.Fprintf(&body, "  Projected monthly cost:  %s\n", formatCost(report.ProjectedCost))
+		fmt.Fprintf(&body, "  Savings:                 %s/mo (%.1f%%)\n", formatCost(report.Savings), report.SavingsPercent)
+	}
 
 	oomPct := report.Risk.ClusterOOM * 100
 	oomLevel := classifyOOMLevel(report.Risk.ClusterOOM)
-	fmt.Fprintf(&body, "  Cluster OOM risk:      %.1f%%  %s\n", oomPct, RenderRiskIndicator(oomLevel, report.NoColor))
-	fmt.Fprintf(&body, "  Overall risk:          %s\n", RenderRiskIndicator(report.Risk.OverallLevel, report.NoColor))
-	fmt.Fprintf(&body, "  Namespaces:            %d\n", len(report.NamespaceBreakdown))
+	fmt.Fprintf(&body, "  Cluster OOM risk:        %.1f%%  %s\n", oomPct, RenderRiskIndicator(oomLevel, report.NoColor))
+	fmt.Fprintf(&body, "  Overall risk:            %s\n", RenderRiskIndicator(report.Risk.OverallLevel, report.NoColor))
+	fmt.Fprintf(&body, "  Namespaces:              %d\n", len(report.NamespaceBreakdown))
 
 	content := body.String()
 	if report.NoColor {
@@ -93,10 +103,24 @@ func renderNamespacePanel(sb *strings.Builder, ns NamespaceSummary, noColor bool
 		fmt.Fprintf(&body, "  %s\n\n", panelTitleStyle.Render(ns.Namespace))
 	}
 
-	// Cost and resource summary
-	fmt.Fprintf(&body, "  Monthly cost:    %s\n", formatCost(ns.MonthlyCost))
-	fmt.Fprintf(&body, "  CPU requested:   %s\n", formatCPU(ns.CPURequested))
-	fmt.Fprintf(&body, "  Mem requested:   %s\n", formatMemory(ns.MemoryRequested))
+	// Show cost if populated (snapshot mode)
+	if ns.MonthlyCost > 0 {
+		fmt.Fprintf(&body, "  Monthly cost:    %s\n", formatCost(ns.MonthlyCost))
+	}
+
+	// Show savings if populated (scenario mode)
+	if ns.Savings > 0 {
+		fmt.Fprintf(&body, "  Savings:         %s/mo\n", formatCost(ns.Savings))
+	}
+
+	// Show resources if populated (snapshot mode)
+	if ns.CPURequested > 0 {
+		fmt.Fprintf(&body, "  CPU requested:   %s\n", formatCPU(ns.CPURequested))
+	}
+	if ns.MemoryRequested > 0 {
+		fmt.Fprintf(&body, "  Mem requested:   %s\n", formatMemory(ns.MemoryRequested))
+	}
+
 	fmt.Fprintf(&body, "  Risk:            %s\n", RenderRiskIndicator(ns.RiskLevel, noColor))
 
 	// Workload breakdown
@@ -106,11 +130,25 @@ func renderNamespacePanel(sb *strings.Builder, ns NamespaceSummary, noColor bool
 		var tbl strings.Builder
 		tw := tabwriter.NewWriter(&tbl, 0, 0, 4, ' ', 0)
 		for _, wl := range ns.Workloads {
-			fmt.Fprintf(tw, "    %s\t%s\t%s\n",
-				wl.Name,
-				formatCost(wl.MonthlyCost),
-				RenderRiskIndicator(wl.RiskLevel, noColor),
-			)
+			switch {
+			case wl.MonthlyCost > 0:
+				fmt.Fprintf(tw, "    %s\t%s\t%s\n",
+					wl.Name,
+					formatCost(wl.MonthlyCost),
+					RenderRiskIndicator(wl.RiskLevel, noColor),
+				)
+			case wl.Savings > 0:
+				fmt.Fprintf(tw, "    %s\t%s/mo saved\t%s\n",
+					wl.Name,
+					formatCost(wl.Savings),
+					RenderRiskIndicator(wl.RiskLevel, noColor),
+				)
+			default:
+				fmt.Fprintf(tw, "    %s\t%s\n",
+					wl.Name,
+					RenderRiskIndicator(wl.RiskLevel, noColor),
+				)
+			}
 		}
 		tw.Flush()
 		body.WriteString(tbl.String())
@@ -119,7 +157,8 @@ func renderNamespacePanel(sb *strings.Builder, ns NamespaceSummary, noColor bool
 	content := body.String()
 	if noColor {
 		// Plain-text separator
-		sb.WriteString(strings.Repeat("-", 44))
+		const panelSeparatorWidth = 44
+		sb.WriteString(strings.Repeat("-", panelSeparatorWidth))
 		sb.WriteString("\n")
 		sb.WriteString(content)
 		sb.WriteString("\n")

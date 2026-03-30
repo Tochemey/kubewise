@@ -115,7 +115,7 @@ func runRightSize(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Build namespace breakdown
-	nsSummaries := buildNamespaceBreakdown(snap, mutated, riskReport)
+	nsSummaries := buildNamespaceBreakdown(riskReport)
 
 	report := output.Report{
 		ScenarioName:       rs.Meta.Name,
@@ -128,6 +128,7 @@ func runRightSize(cmd *cobra.Command, _ []string) error {
 		NamespaceBreakdown: nsSummaries,
 		Verbose:            verbose,
 		NoColor:            noColor,
+		Layout:             output.LayoutPanel,
 	}
 
 	return output.Render(os.Stdout, report, outputFormat)
@@ -158,6 +159,8 @@ func splitCSV(s string) []string {
 	return result
 }
 
+// calculateMonthlyCostFromSnapshot sums the on-demand hourly cost of all nodes
+// and projects it to a monthly total.
 func calculateMonthlyCostFromSnapshot(snap *collector.ClusterSnapshot, provider pricing.PricingProvider, region string) float64 {
 	var total float64
 	for _, node := range snap.Nodes {
@@ -165,15 +168,17 @@ func calculateMonthlyCostFromSnapshot(snap *collector.ClusterSnapshot, provider 
 		if err != nil {
 			continue
 		}
-		total += cost * 730 // average hours per month
+		total += cost * pricing.HoursPerMonth
 	}
 	return total
 }
 
-func buildNamespaceBreakdown(_ *collector.ClusterSnapshot, _ *collector.ClusterSnapshot, riskReport *risk.RiskReport) []output.NamespaceSummary {
+// buildNamespaceBreakdown aggregates per-workload risk into per-namespace summaries,
+// using the worst risk level found in each namespace.
+func buildNamespaceBreakdown(riskReport *risk.RiskReport) []output.NamespaceSummary {
 	var summaries []output.NamespaceSummary
 
-	for key, wr := range riskReport.PerWorkload {
+	for _, wr := range riskReport.PerWorkload {
 		found := false
 		for i := range summaries {
 			if summaries[i].Namespace == wr.Namespace {
@@ -190,7 +195,6 @@ func buildNamespaceBreakdown(_ *collector.ClusterSnapshot, _ *collector.ClusterS
 				RiskLevel: wr.Level,
 			})
 		}
-		_ = key
 	}
 
 	return summaries

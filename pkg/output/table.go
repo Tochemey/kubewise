@@ -26,16 +26,27 @@ import (
 	"github.com/tochemey/kubewise/pkg/risk"
 )
 
+// ANSI 256-color codes used for terminal styling.
+const (
+	colorWhite     = lipgloss.Color("15")  // bold headers
+	colorGreen     = lipgloss.Color("42")  // low risk indicator
+	colorAmber     = lipgloss.Color("214") // moderate risk indicator
+	colorRed       = lipgloss.Color("196") // high risk indicator
+	colorDim       = lipgloss.Color("245") // muted/unknown text
+	colorBorder    = lipgloss.Color("240") // panel border
+	colorPanelCyan = lipgloss.Color("117") // namespace panel title
+)
+
 // Styles used for terminal rendering.
 var (
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
-	greenStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	amberStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	redStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(colorWhite)
+	greenStyle  = lipgloss.NewStyle().Foreground(colorGreen)
+	amberStyle  = lipgloss.NewStyle().Foreground(colorAmber)
+	redStyle    = lipgloss.NewStyle().Foreground(colorRed)
+	dimStyle    = lipgloss.NewStyle().Foreground(colorDim)
 	borderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
+			BorderForeground(colorBorder).
 			Padding(0, 1)
 )
 

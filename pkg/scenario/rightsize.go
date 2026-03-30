@@ -58,8 +58,8 @@ const (
 const (
 	// minCPUMillicores is the minimum CPU request floor.
 	minCPUMillicores int64 = 10
-	// minMemoryBytes is the minimum memory request floor (32Mi).
-	minMemoryBytes int64 = 33554432
+	// minMemoryBytes is the minimum memory request floor (32 Mi = 32 * 1024 * 1024).
+	minMemoryBytes int64 = 32 * 1024 * 1024
 )
 
 // RightSizeScenario adjusts resource requests and limits based on actual usage percentiles.

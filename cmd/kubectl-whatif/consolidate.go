@@ -127,7 +127,7 @@ func runConsolidate(cmd *cobra.Command, _ []string) error {
 		OverallLevel:   risk.ClassifyRisk(0, 0, schedulingRiskVal),
 	}
 
-	report := buildCostReport(cs.Meta, snap, costReport, &riskReport, simResult)
+	report := buildCostReport(cs.Meta, costReport, &riskReport)
 	return output.Render(os.Stdout, report, outputFormat)
 }
 

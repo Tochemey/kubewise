@@ -17,12 +17,11 @@ package simulator
 import (
 	"github.com/tochemey/kubewise/pkg/collector"
 	"github.com/tochemey/kubewise/pkg/pricing"
+	"k8s.io/klog/v2"
 )
 
-const (
-	// hoursPerMonth is the average number of hours in a month (730 = 365*24/12).
-	hoursPerMonth = 730
-)
+// hoursPerMonth aliases pricing.HoursPerMonth for shorter references in this file.
+const hoursPerMonth = pricing.HoursPerMonth
 
 // CostReport holds cost calculation results for baseline and scenario.
 type CostReport struct {
@@ -84,7 +83,7 @@ func CalculateCost(original *collector.ClusterSnapshot, simResult *SimulationRes
 
 	// 2. Scenario cost: active nodes in simulation result
 	// Determine which nodes are active and whether they host spot pods
-	spotNodes := identifySpotNodes(simResult)
+	spotNodes := IdentifySpotNodesFromSnapshot(original)
 	var scenarioCost float64
 	for _, node := range original.Nodes {
 		if _, active := simResult.NodeUtilization[node.Name]; !active {
@@ -93,7 +92,7 @@ func CalculateCost(original *collector.ClusterSnapshot, simResult *SimulationRes
 		hourly := lookupHourlyCost(pricingProvider, node.InstanceType, region)
 		isSpot := spotNodes[node.Name]
 		if isSpot && spotDiscount > 0 {
-			hourly *= (1 - spotDiscount)
+			hourly *= 1 - spotDiscount
 		}
 		monthly := hourly * hoursPerMonth
 		scenarioCost += monthly
@@ -125,7 +124,7 @@ func CalculateCost(original *collector.ClusterSnapshot, simResult *SimulationRes
 					hourly := lookupHourlyCost(pricingProvider, node.InstanceType, region)
 					isSpot := spotNodes[nodeName]
 					if isSpot && spotDiscount > 0 {
-						hourly *= (1 - spotDiscount)
+						hourly *= 1 - spotDiscount
 					}
 					monthly := hourly * hoursPerMonth
 					scenarioCost += monthly
@@ -165,43 +164,25 @@ func calculateNodesCost(nodes []collector.NodeSnapshot, provider pricing.Pricing
 	for _, node := range nodes {
 		hourly := lookupHourlyCost(provider, node.InstanceType, region)
 		if applySpot && spotDiscount > 0 {
-			hourly *= (1 - spotDiscount)
+			hourly *= 1 - spotDiscount
 		}
 		total += hourly * hoursPerMonth
 	}
 	return total
 }
 
-// lookupHourlyCost gets the hourly cost from the pricing provider, logging warnings on failure.
+// lookupHourlyCost returns the on-demand hourly cost for the given instance type.
+// Returns 0 and logs a warning if the instance type has no pricing data.
 func lookupHourlyCost(provider pricing.PricingProvider, instanceType, region string) float64 {
 	if instanceType == "" {
 		return 0
 	}
 	cost, err := provider.HourlyCost(instanceType, region, false)
 	if err != nil {
+		klog.V(2).InfoS("No pricing data for instance type", "instanceType", instanceType, "err", err)
 		return 0
 	}
 	return cost
-}
-
-// identifySpotNodes returns a set of node names that host only spot-tagged pods.
-func identifySpotNodes(simResult *SimulationResult) map[string]bool {
-	if simResult == nil {
-		return nil
-	}
-
-	// Build node → pods mapping from placements
-	nodePods := make(map[string][]string) // nodeName → podNames
-	podSpot := make(map[string]bool)      // podKey → isSpot
-
-	// We need the actual pod data to check IsSpot; placements only have names.
-	// For now, mark nodes based on simulation result's unschedulable list check.
-	// The actual IsSpot flag is on the snapshot pods.
-	_ = nodePods
-	_ = podSpot
-
-	// Return empty — the caller handles spot via the snapshot pods directly
-	return make(map[string]bool)
 }
 
 // IdentifySpotNodesFromSnapshot determines which nodes host only spot-tagged pods.

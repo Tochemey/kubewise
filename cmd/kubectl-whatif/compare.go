@@ -101,7 +101,7 @@ func runCompare(cmd *cobra.Command, _ []string) error {
 
 		meta := scenario.ScenarioMetadata{Name: fmt.Sprintf("Scenario %d: %s", i+1, s.Kind())}
 
-		report := buildCostReport(meta, snap, costReport, riskReport, simResult)
+		report := buildCostReport(meta, costReport, riskReport)
 		if renderErr := output.Render(os.Stdout, report, outputFormat); renderErr != nil {
 			return renderErr
 		}

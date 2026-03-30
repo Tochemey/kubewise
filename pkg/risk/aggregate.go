@@ -122,7 +122,7 @@ func ScoreOOMRisk(snap *collector.ClusterSnapshot) *RiskReport {
 		}
 
 		if !hasData {
-			wr.OOMRisk = -1
+			wr.OOMRisk = -1.0
 			wr.Level = RiskUnknown
 		} else {
 			wr.OOMRisk = 1 - survivalProb

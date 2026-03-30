@@ -157,7 +157,7 @@ func buildSnapshotReport(snap *collector.ClusterSnapshot) output.Report {
 	var totalMonthlyCost float64
 	for _, node := range snap.Nodes {
 		if ip, ok := snap.Pricing.InstancePricing[node.InstanceType]; ok {
-			totalMonthlyCost += ip.OnDemandHourly * 730
+			totalMonthlyCost += ip.OnDemandHourly * pricing.HoursPerMonth
 		}
 	}
 

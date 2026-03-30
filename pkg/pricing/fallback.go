@@ -21,22 +21,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// pricingFile represents the YAML pricing file format.
+// pricingFile represents the top-level structure of the YAML pricing file.
 type pricingFile struct {
 	Pricing map[string]pricingEntry `yaml:"pricing"`
 }
 
+// pricingEntry holds the on-demand and spot hourly costs for a single instance type.
 type pricingEntry struct {
 	OnDemandHourly float64 `yaml:"on_demand_hourly"`
 	SpotHourly     float64 `yaml:"spot_hourly"`
 }
 
-// FilePricingProvider implements PricingProvider using a YAML pricing file.
+// FilePricingProvider implements PricingProvider using a user-supplied YAML pricing file.
+// This is the manual fallback when cloud API pricing is unavailable.
 type FilePricingProvider struct {
 	prices map[string]pricingEntry
 }
 
 // LoadPricingFromFile reads a YAML pricing file and returns a PricingProvider.
+// The file must contain a top-level "pricing" key mapping instance type names
+// to their on_demand_hourly and (optionally) spot_hourly costs.
 func LoadPricingFromFile(path string) (PricingProvider, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -55,6 +59,9 @@ func LoadPricingFromFile(path string) (PricingProvider, error) {
 	return &FilePricingProvider{prices: pf.Pricing}, nil
 }
 
+// HourlyCost returns the hourly cost for the given instance type from the pricing file.
+// If spot is true and no explicit spot price is provided, the on-demand price
+// is discounted by DefaultSpotDiscount.
 func (p *FilePricingProvider) HourlyCost(instanceType string, _ string, spot bool) (float64, error) {
 	entry, ok := p.prices[instanceType]
 	if !ok {
@@ -64,12 +71,12 @@ func (p *FilePricingProvider) HourlyCost(instanceType string, _ string, spot boo
 		if entry.SpotHourly > 0 {
 			return entry.SpotHourly, nil
 		}
-		// Fall back to on-demand if spot price not specified
-		return entry.OnDemandHourly * defaultSpotDiscount, nil
+		return entry.OnDemandHourly * DefaultSpotDiscount, nil
 	}
 	return entry.OnDemandHourly, nil
 }
 
+// Provider returns the provider name for file-based pricing.
 func (p *FilePricingProvider) Provider() string {
-	return "file"
+	return ProviderFile
 }

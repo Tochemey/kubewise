@@ -32,7 +32,7 @@ func TestAzureProviderFromPrices(t *testing.T) {
 		"Standard_D4s_v3": 0.192,
 		"Standard_D8s_v3": 0.384,
 	}
-	provider := NewAzureProviderFromPrices(prices, defaultSpotDiscount)
+	provider := NewAzureProviderFromPrices(prices, DefaultSpotDiscount)
 
 	t.Run("on-demand", func(t *testing.T) {
 		cost, err := provider.HourlyCost("Standard_D4s_v3", "eastus", false)
@@ -43,7 +43,7 @@ func TestAzureProviderFromPrices(t *testing.T) {
 	t.Run("spot pricing", func(t *testing.T) {
 		cost, err := provider.HourlyCost("Standard_D4s_v3", "eastus", true)
 		require.NoError(t, err)
-		assert.InDelta(t, 0.192*defaultSpotDiscount, cost, 1e-9)
+		assert.InDelta(t, 0.192*DefaultSpotDiscount, cost, 1e-9)
 	})
 
 	t.Run("unknown instance type", func(t *testing.T) {

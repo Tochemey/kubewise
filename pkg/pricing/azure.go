@@ -21,14 +21,24 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 
 	"k8s.io/klog/v2"
 )
 
 const (
 	azureRetailPricesURL = "https://prices.azure.com/api/retail/prices"
-	azureHTTPTimeout     = 30 * time.Second
+
+	// azureUnitHour is the unit-of-measure value for hourly pricing in the Azure Retail Prices API.
+	azureUnitHour = "1 Hour"
+
+	// azurePriceTypeConsumption is the price type for pay-as-you-go (on-demand) pricing.
+	azurePriceTypeConsumption = "Consumption"
+
+	// azureServiceVMs is the Azure service name for Virtual Machines.
+	azureServiceVMs = "Virtual Machines"
+
+	// azureVMPriceFilter is the OData filter template used to query Linux on-demand VM prices.
+	azureVMPriceFilter = "armRegionName eq '%s' and serviceName eq '" + azureServiceVMs + "' and priceType eq '" + azurePriceTypeConsumption + "'"
 )
 
 // AzureProvider implements PricingProvider for Azure Virtual Machines.
@@ -45,7 +55,7 @@ type AzureProvider struct {
 	baseURL string
 }
 
-// AzureOption configures the Azure pricing provider.
+// AzureOption is a functional option for configuring the Azure pricing provider.
 type AzureOption func(*AzureProvider)
 
 // WithAzureHTTPClient sets a custom HTTP client.
@@ -73,9 +83,9 @@ func WithAzureBaseURL(baseURL string) AzureOption {
 func NewAzureProvider(ctx context.Context, region string, opts ...AzureOption) (*AzureProvider, error) {
 	p := &AzureProvider{
 		prices:       make(map[string]float64),
-		spotDiscount: defaultSpotDiscount,
+		spotDiscount: DefaultSpotDiscount,
 		region:       region,
-		httpClient:   &http.Client{Timeout: azureHTTPTimeout},
+		httpClient:   &http.Client{Timeout: DefaultHTTPTimeout},
 		baseURL:      azureRetailPricesURL,
 	}
 	for _, opt := range opts {
@@ -83,20 +93,24 @@ func NewAzureProvider(ctx context.Context, region string, opts ...AzureOption) (
 	}
 
 	// Try cache first
-	cached, err := GetCached("azure", region)
+	cached, err := GetCached(ProviderAzure, region)
 	if err == nil && len(cached) > 0 {
 		klog.V(1).InfoS("Using cached Azure pricing", "region", region, "instanceTypes", len(cached))
 		p.prices = cached
 		return p, nil
 	}
 
-	// Fetch from API
-	if err := p.fetchPricing(ctx, region); err != nil {
-		return nil, fmt.Errorf("fetching Azure pricing for region %s: %w", region, err)
+	// Fetch from API with retry
+	err = Retry(ctx, DefaultRetryConfig(), func() error {
+		p.prices = make(map[string]float64) // reset on retry
+		return p.fetchPricing(ctx, region)
+	})
+	if err != nil {
+		return nil, AzureSetupError(region, err)
 	}
 
 	// Cache the result
-	if cacheErr := SetCached("azure", region, p.prices); cacheErr != nil {
+	if cacheErr := SetCached(ProviderAzure, region, p.prices); cacheErr != nil {
 		klog.V(1).InfoS("Failed to cache Azure pricing", "err", cacheErr)
 	}
 
@@ -123,15 +137,16 @@ func (p *AzureProvider) HourlyCost(instanceType string, _ string, spot bool) (fl
 }
 
 func (p *AzureProvider) Provider() string {
-	return "azure"
+	return ProviderAzure
 }
 
-// azureRetailResponse represents the Azure Retail Prices API response.
+// azureRetailResponse represents the paginated response from the Azure Retail Prices API.
 type azureRetailResponse struct {
 	Items        []azurePriceItem `json:"Items"`
 	NextPageLink string           `json:"NextPageLink"`
 }
 
+// azurePriceItem represents a single pricing line item returned by the Azure Retail Prices API.
 type azurePriceItem struct {
 	ArmRegionName string  `json:"armRegionName"`
 	ArmSkuName    string  `json:"armSkuName"`
@@ -147,10 +162,7 @@ func (p *AzureProvider) fetchPricing(ctx context.Context, region string) error {
 	klog.V(1).InfoS("Fetching Azure pricing", "region", region)
 
 	// Build OData filter for Linux on-demand VMs in the specified region
-	filter := fmt.Sprintf(
-		"armRegionName eq '%s' and serviceName eq 'Virtual Machines' and priceType eq 'Consumption'",
-		region,
-	)
+	filter := fmt.Sprintf(azureVMPriceFilter, region)
 
 	pageURL := fmt.Sprintf("%s?$filter=%s", p.baseURL, url.QueryEscape(filter))
 
@@ -166,6 +178,7 @@ func (p *AzureProvider) fetchPricing(ctx context.Context, region string) error {
 	return nil
 }
 
+// fetchPage fetches a single page of Azure pricing results and stores qualifying VM prices.
 func (p *AzureProvider) fetchPage(ctx context.Context, pageURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
@@ -179,7 +192,7 @@ func (p *AzureProvider) fetchPage(ctx context.Context, pageURL string) (string, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("azure pricing API returned status %d", resp.StatusCode)
+		return "", classifyHTTPError(resp.StatusCode, "Azure pricing API returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -194,10 +207,10 @@ func (p *AzureProvider) fetchPage(ctx context.Context, pageURL string) (string, 
 
 	for _, item := range azureResp.Items {
 		// Filter for Linux VMs with hourly pricing
-		if item.UnitOfMeasure != "1 Hour" {
+		if item.UnitOfMeasure != azureUnitHour {
 			continue
 		}
-		if item.Type != "Consumption" {
+		if item.Type != azurePriceTypeConsumption {
 			continue
 		}
 		if item.ArmSkuName == "" {
