@@ -119,4 +119,3 @@ func Retry(ctx context.Context, cfg RetryConfig, fn func() error) error {
 
 	return fmt.Errorf("failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
-
