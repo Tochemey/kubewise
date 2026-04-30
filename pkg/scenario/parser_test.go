@@ -76,77 +76,23 @@ spec:
 	assert.Equal(t, []string{"*"}, rs.Scope.Namespaces) // default scope
 }
 
-func TestParseConsolidateScenario(t *testing.T) {
-	yaml := `
-apiVersion: kubewise.io/v1alpha1
-kind: Consolidate
-metadata:
-  name: consolidate-m6i
-  description: "Consolidate to m6i.xlarge"
-spec:
-  target_node_type: m6i.xlarge
-  max_nodes: 50
-  keep_node_pools:
-    - gpu-pool
-`
-	s, err := ParseScenarioBytes([]byte(yaml))
-	require.NoError(t, err)
-	assert.Equal(t, "Consolidate", s.Kind())
-
-	cs, ok := s.(*ConsolidateScenario)
-	require.True(t, ok)
-	assert.Equal(t, "m6i.xlarge", cs.TargetNodeType)
-	assert.Equal(t, 50, cs.MaxNodes)
-	assert.Equal(t, []string{"gpu-pool"}, cs.KeepNodePools)
-}
-
-func TestParseSpotMigrateScenario(t *testing.T) {
-	yaml := `
-apiVersion: kubewise.io/v1alpha1
-kind: SpotMigrate
-metadata:
-  name: spot-stateless
-spec:
-  eligibility:
-    min_replicas: 2
-    controller_types:
-      - Deployment
-      - ReplicaSet
-    exclude_namespaces:
-      - kube-system
-      - payments
-  spot_discount: 0.65
-`
-	s, err := ParseScenarioBytes([]byte(yaml))
-	require.NoError(t, err)
-	assert.Equal(t, "SpotMigrate", s.Kind())
-
-	sm, ok := s.(*SpotMigrateScenario)
-	require.True(t, ok)
-	assert.Equal(t, 2, sm.MinReplicas)
-	assert.Equal(t, []string{"Deployment", "ReplicaSet"}, sm.ControllerTypes)
-	assert.Equal(t, []string{"kube-system", "payments"}, sm.ExcludeNamespaces)
-	assert.InDelta(t, 0.65, sm.SpotDiscount, 1e-9)
-}
-
 func TestParseCompositeScenario(t *testing.T) {
 	yaml := `
 apiVersion: kubewise.io/v1alpha1
 kind: Composite
 metadata:
-  name: aggressive-savings
-  description: "Right-size then move stateless to spot"
+  name: layered-rightsize
+  description: "Aggressive then conservative right-size"
 spec:
   steps:
     - kind: RightSize
       spec:
         percentile: p90
         buffer: 15
-    - kind: SpotMigrate
+    - kind: RightSize
       spec:
-        eligibility:
-          min_replicas: 2
-        spot_discount: 0.65
+        percentile: p99
+        buffer: 30
 `
 	s, err := ParseScenarioBytes([]byte(yaml))
 	require.NoError(t, err)
@@ -154,12 +100,11 @@ spec:
 
 	cs, ok := s.(*CompositeScenario)
 	require.True(t, ok)
-	assert.Equal(t, "aggressive-savings", cs.Meta.Name)
+	assert.Equal(t, "layered-rightsize", cs.Meta.Name)
 	assert.Equal(t, 2, len(cs.Steps))
 	assert.Equal(t, "RightSize", cs.Steps[0].Kind())
-	assert.Equal(t, "SpotMigrate", cs.Steps[1].Kind())
+	assert.Equal(t, "RightSize", cs.Steps[1].Kind())
 
-	// Verify parsed details of sub-steps
 	rs, ok := cs.Steps[0].(*RightSizeScenario)
 	require.True(t, ok)
 	assert.Equal(t, "p90", rs.Percentile)

@@ -26,12 +26,6 @@ const (
 	// KindRightSize adjusts container resource requests and limits to match
 	// observed usage percentiles, reducing over-provisioning.
 	KindRightSize = "RightSize"
-	// KindConsolidate repacks workloads onto fewer, larger nodes to improve
-	// bin-packing efficiency and reduce total node count.
-	KindConsolidate = "Consolidate"
-	// KindSpotMigrate identifies workloads eligible to run on spot/preemptible
-	// instances and estimates the resulting cost savings.
-	KindSpotMigrate = "SpotMigrate"
 	// KindComposite chains multiple scenarios sequentially, feeding the output
 	// of each step as input to the next.
 	KindComposite = "Composite"
@@ -39,7 +33,7 @@ const (
 
 // Scenario defines a mutation that can be applied to a cluster snapshot.
 type Scenario interface {
-	// Kind returns the scenario type name (e.g., "RightSize", "Consolidate", "SpotMigrate").
+	// Kind returns the scenario type name (e.g., "RightSize", "Composite").
 	Kind() string
 	// Apply mutates a snapshot copy and returns the result.
 	// The snapshot passed to Apply is already a deep copy — implementations

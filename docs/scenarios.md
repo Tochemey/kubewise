@@ -8,7 +8,7 @@ All scenario files follow this structure:
 
 ```yaml
 apiVersion: kubewise.io/v1alpha1
-kind: RightSize | Consolidate | SpotMigrate | Composite
+kind: RightSize | Composite
 metadata:
   name: my-scenario
   description: "Human-readable description"
@@ -62,86 +62,6 @@ spec:
 kubectl whatif rightsize --percentile=p95 --buffer=20 --exclude-namespace=kube-system --limit-strategy=ratio
 ```
 
-## Consolidate
-
-Replaces current node types with a target instance type and determines the minimum number of nodes needed.
-
-### YAML schema
-
-```yaml
-apiVersion: kubewise.io/v1alpha1
-kind: Consolidate
-metadata:
-  name: consolidate-m6i
-  description: "Consolidate to m6i.xlarge"
-spec:
-  target_node_type: m6i.xlarge
-  max_nodes: 50            # 0 = unlimited
-  keep_node_pools:
-    - gpu-pool
-```
-
-### Fields
-
-| Field              | Type     | Default  | Description                             |
-|--------------------|----------|----------|-----------------------------------------|
-| `target_node_type` | string   | required | Target instance type                    |
-| `max_nodes`        | int      | 0        | Maximum number of nodes (0 = unlimited) |
-| `keep_node_pools`  | string[] | []       | Node pool names to leave untouched      |
-
-### How it works
-
-1. Removes all nodes not in `keep_node_pools`
-2. Creates virtual nodes of the target type
-3. Runs bin-packing simulation to place all pods
-4. Adds nodes until all pods are scheduled or `max_nodes` is hit
-5. Reports the final node count and any unschedulable pods
-
-### CLI equivalent
-
-```bash
-kubectl whatif consolidate --node-type=m6i.xlarge --max-nodes=50 --keep-pool=gpu-pool
-```
-
-## SpotMigrate
-
-Identifies workloads eligible for spot/preemptible instances and estimates cost savings and eviction risk.
-
-### YAML schema
-
-```yaml
-apiVersion: kubewise.io/v1alpha1
-kind: SpotMigrate
-metadata:
-  name: spot-stateless
-  description: "Move stateless workloads to spot"
-spec:
-  eligibility:
-    min_replicas: 2
-    controller_types:
-      - Deployment
-      - ReplicaSet
-    exclude_namespaces:
-      - kube-system
-      - payments
-  spot_discount: 0.65
-```
-
-### Fields
-
-| Field                            | Type     | Default | Description                             |
-|----------------------------------|----------|---------|-----------------------------------------|
-| `eligibility.min_replicas`       | int      | 2       | Minimum replica count for eligibility   |
-| `eligibility.controller_types`   | string[] | all     | Controller types eligible for spot      |
-| `eligibility.exclude_namespaces` | string[] | []      | Namespaces to exclude                   |
-| `spot_discount`                  | float    | 0.65    | Spot discount fraction (0.65 = 65% off) |
-
-### CLI equivalent
-
-```bash
-kubectl whatif spot --min-replicas=2 --discount=0.65 --exclude-namespace=kube-system,payments
-```
-
 ## Composite
 
 Chains multiple scenarios sequentially. Each step receives the output of the previous step.
@@ -152,33 +72,28 @@ Chains multiple scenarios sequentially. Each step receives the output of the pre
 apiVersion: kubewise.io/v1alpha1
 kind: Composite
 metadata:
-  name: aggressive-savings
-  description: "Right-size then move to spot"
+  name: layered-rightsize
+  description: "Right-size in two passes"
 spec:
   steps:
     - kind: RightSize
       spec:
-        percentile: p95
-        buffer: 20
-    - kind: SpotMigrate
+        percentile: p90
+        buffer: 15
+    - kind: RightSize
       spec:
-        eligibility:
-          min_replicas: 2
-        spot_discount: 0.65
+        percentile: p99
+        buffer: 30
+        scope:
+          namespaces: ["payments", "auth"]
 ```
 
 ### Common use cases
 
-**Conservative savings**: Right-size with wide buffers, keep everything on-demand.
+**Conservative right-sizing**: wide buffers, exclude system namespaces.
 
 ```bash
 kubectl whatif apply -f scenarios/rightsize-conservative.yaml
-```
-
-**Maximum savings**: Right-size aggressively, then move stateless workloads to spot.
-
-```bash
-kubectl whatif apply -f scenarios/composite-savings.yaml
 ```
 
 **Compare approaches**: See the tradeoff between conservative and aggressive right-sizing.

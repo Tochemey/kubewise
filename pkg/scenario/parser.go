@@ -66,25 +66,6 @@ type limitsSpec struct {
 	Strategy string `yaml:"strategy"`
 }
 
-// consolidateSpec is the spec for Consolidate scenarios.
-type consolidateSpec struct {
-	TargetNodeType string   `yaml:"target_node_type"`
-	MaxNodes       int      `yaml:"max_nodes"`
-	KeepNodePools  []string `yaml:"keep_node_pools"`
-}
-
-// spotMigrateSpec is the spec for SpotMigrate scenarios.
-type spotMigrateSpec struct {
-	Eligibility  spotEligibility `yaml:"eligibility"`
-	SpotDiscount float64         `yaml:"spot_discount"`
-}
-
-type spotEligibility struct {
-	MinReplicas       int      `yaml:"min_replicas"`
-	ControllerTypes   []string `yaml:"controller_types"`
-	ExcludeNamespaces []string `yaml:"exclude_namespaces"`
-}
-
 // ParseScenarioFile reads a YAML scenario file and returns a Scenario.
 func ParseScenarioFile(path string) (Scenario, error) {
 	data, err := os.ReadFile(path)
@@ -117,10 +98,6 @@ func parseScenarioByKind(kind string, meta ScenarioMetadata, specNode *yaml.Node
 	switch kind {
 	case KindRightSize:
 		return parseRightSizeScenario(meta, specNode)
-	case KindConsolidate:
-		return parseConsolidateScenario(meta, specNode)
-	case KindSpotMigrate:
-		return parseSpotMigrateScenario(meta, specNode)
 	case KindComposite:
 		return parseCompositeScenario(meta, specNode)
 	default:
@@ -163,35 +140,6 @@ func parseRightSizeScenario(meta ScenarioMetadata, specNode *yaml.Node) (Scenari
 		Buffer:        spec.Buffer,
 		Scope:         scope,
 		LimitStrategy: limitStrategy,
-	}, nil
-}
-
-func parseConsolidateScenario(meta ScenarioMetadata, specNode *yaml.Node) (Scenario, error) {
-	var spec consolidateSpec
-	if err := specNode.Decode(&spec); err != nil {
-		return nil, fmt.Errorf("parsing Consolidate spec: %w", err)
-	}
-
-	return &ConsolidateScenario{
-		Meta:           meta,
-		TargetNodeType: spec.TargetNodeType,
-		MaxNodes:       spec.MaxNodes,
-		KeepNodePools:  spec.KeepNodePools,
-	}, nil
-}
-
-func parseSpotMigrateScenario(meta ScenarioMetadata, specNode *yaml.Node) (Scenario, error) {
-	var spec spotMigrateSpec
-	if err := specNode.Decode(&spec); err != nil {
-		return nil, fmt.Errorf("parsing SpotMigrate spec: %w", err)
-	}
-
-	return &SpotMigrateScenario{
-		Meta:              meta,
-		MinReplicas:       spec.Eligibility.MinReplicas,
-		ControllerTypes:   spec.Eligibility.ControllerTypes,
-		ExcludeNamespaces: spec.Eligibility.ExcludeNamespaces,
-		SpotDiscount:      spec.SpotDiscount,
 	}, nil
 }
 

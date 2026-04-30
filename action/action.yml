@@ -1,12 +1,12 @@
 name: 'KubeWise Cost Check'
-description: 'Run KubeWise what-if simulation and post results as PR comment'
+description: 'Right-size Kubernetes workloads from Prometheus data and post results as a PR comment'
 
 inputs:
   kubeconfig:
     description: 'Base64-encoded kubeconfig'
     required: true
   scenario:
-    description: 'Scenario type: rightsize, consolidate, spot, snapshot'
+    description: 'Scenario type: rightsize or snapshot'
     required: true
     default: 'rightsize'
   scenario-file:
@@ -21,15 +21,6 @@ inputs:
   buffer:
     description: 'Buffer percentage for right-sizing'
     default: '20'
-  node-type:
-    description: 'Target node type for consolidation'
-    required: false
-  min-replicas:
-    description: 'Minimum replicas for spot eligibility'
-    default: '2'
-  discount:
-    description: 'Spot discount fraction'
-    default: '0.65'
   comment:
     description: 'Post result as PR comment'
     default: 'true'
@@ -38,14 +29,9 @@ inputs:
     default: 'false'
 
 outputs:
-  savings:
-    description: 'Projected monthly savings'
-  savings-percent:
-    description: 'Projected savings percentage'
-  risk-level:
-    description: 'Overall risk level (green, amber, red)'
   markdown:
     description: 'Full markdown report'
+    value: ${{ steps.simulate.outputs.markdown }}
 
 runs:
   using: 'composite'
@@ -68,9 +54,6 @@ runs:
         INPUT_SCENARIO_FILE: ${{ inputs.scenario-file }}
         INPUT_PERCENTILE: ${{ inputs.percentile }}
         INPUT_BUFFER: ${{ inputs.buffer }}
-        INPUT_NODE_TYPE: ${{ inputs.node-type }}
-        INPUT_MIN_REPLICAS: ${{ inputs.min-replicas }}
-        INPUT_DISCOUNT: ${{ inputs.discount }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
         INPUT_SAVE: ${{ inputs.save }}

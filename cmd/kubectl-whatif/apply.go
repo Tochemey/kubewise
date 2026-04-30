@@ -27,7 +27,6 @@ import (
 	"github.com/tochemey/kubewise/pkg/pricing"
 	"github.com/tochemey/kubewise/pkg/risk"
 	"github.com/tochemey/kubewise/pkg/scenario"
-	"github.com/tochemey/kubewise/pkg/simulator"
 )
 
 var applyScenarioFile string
@@ -50,7 +49,6 @@ func runApply(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
 	defer cancel()
 
-	// Parse scenario file
 	s, err := scenario.ParseScenarioFile(applyScenarioFile)
 	if err != nil {
 		return fmt.Errorf("parsing scenario file: %w", err)
@@ -61,56 +59,33 @@ func runApply(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Apply scenario
 	mutated, err := scenario.ApplyScenario(s, snap)
 	if err != nil {
 		return fmt.Errorf("applying scenario: %w", err)
 	}
 
-	// Run simulation if needed (consolidation scenarios need bin-packing)
-	var simResult *simulator.SimulationResult
-	if s.Kind() == "Consolidate" {
-		cs, ok := s.(*scenario.ConsolidateScenario)
-		if ok {
-			simResult, err = simulator.SimulateWithAutoscaler(mutated, cs.TargetNodeType, cs.TargetAllocatable, cs.MaxNodes)
-			if err != nil {
-				return fmt.Errorf("running simulation: %w", err)
-			}
-		}
-	}
-	if simResult == nil {
-		simResult, err = simulator.Simulate(mutated)
-		if err != nil {
-			return fmt.Errorf("running simulation: %w", err)
-		}
-	}
+	riskReport := risk.ScoreOOMRisk(mutated)
+	riskReport.OverallLevel = risk.ClassifyRisk(riskReport.ClusterOOM, riskReport.ClusterEviction, riskReport.SchedulingRisk)
 
-	// Calculate costs
 	providerName, region := pricing.DetectProvider(snap.Nodes)
-	var costReport *simulator.CostReport
+	var baselineCost, projectedCost float64
 	if providerName != "" && region != "" {
 		pricingProvider, pErr := pricing.NewProvider(ctx, providerName, region)
 		if pErr != nil {
 			klog.V(1).InfoS("Pricing unavailable", "err", pErr)
 		} else {
-			costReport = simulator.CalculateCost(snap, simResult, pricingProvider, 0)
+			baselineCost = calculateMonthlyCostFromSnapshot(snap, pricingProvider, region)
+			projectedCost = baselineCost
 		}
 	}
-
-	// Score risk
-	riskReport := risk.ScoreOOMRisk(mutated)
-	riskReport.SchedulingRisk = risk.SchedulingRisk(len(simResult.UnschedulablePods), len(mutated.Pods))
-	riskReport.OverallLevel = risk.ClassifyRisk(riskReport.ClusterOOM, riskReport.ClusterEviction, riskReport.SchedulingRisk)
 
 	meta := scenario.ScenarioMetadata{Name: s.Kind()}
 	if rs, ok := s.(*scenario.RightSizeScenario); ok {
 		meta = rs.Meta
-	} else if cs, ok := s.(*scenario.ConsolidateScenario); ok {
+	} else if cs, ok := s.(*scenario.CompositeScenario); ok {
 		meta = cs.Meta
-	} else if ss, ok := s.(*scenario.SpotMigrateScenario); ok {
-		meta = ss.Meta
 	}
 
-	report := buildCostReport(meta, costReport, riskReport)
+	report := buildCostReport(meta, baselineCost, projectedCost, riskReport)
 	return output.Render(os.Stdout, report, outputFormat)
 }

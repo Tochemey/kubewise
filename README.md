@@ -7,8 +7,9 @@
 </h2>
 
 <p align="center">
-  <strong>Kubernetes cost and performance "what-if" simulator.</strong><br>
-  Snapshot your cluster, simulate changes, and see the cost impact before making them.
+  <strong>Right-size Kubernetes workloads from real Prometheus usage data.</strong><br>
+  A kubectl plugin and GitHub Action that recommends pod request changes
+  with cost impact and OOM-risk classification — so the savings number lands in your PR review, not three weeks after the migration.
 </p>
 
 <p align="center">
@@ -19,47 +20,40 @@
 
 ---
 
-## 😵 The Problem
+## The Problem
 
-Kubernetes billing is a black box. Teams overprovision because the cost of an outage outweighs the cost of waste — and nobody has time to model the tradeoffs. Cloud cost tools tell you *what you're spending*, but they don't answer **"what would happen if I changed X?"** You're flying blind every time you touch resource requests, node pools, or scheduling policies.
+Teams overprovision Kubernetes workloads because nobody knows what the right number is. The data exists — Prometheus has weeks of CPU and memory history per pod — but reading it, applying a percentile, and translating "12 fewer cores" into "$1,400/month" is the kind of work that always gets pushed to next sprint. So requests stay padded and the cluster bill keeps climbing.
 
-## 💡 The Solution
+## What KubeWise Does
 
-KubeWise is a Kubernetes cost × performance "what-if" simulator. It snapshots your live cluster, lets you define hypothetical changes, simulates the Kubernetes scheduler against the modified state, and reports cost savings alongside reliability risk — all without touching your cluster.
+KubeWise pulls real usage percentiles (P50/P90/P95/P99) from Prometheus, applies a configurable safety buffer, and reports the resulting CPU/memory request changes with:
 
-**The core loop: snapshot → mutate → simulate → compare.**
+- a **dollar amount per namespace** computed from live cloud pricing (AWS/Azure/GCP)
+- an **OOM-risk classification** per workload, so you don't tighten the screws on a workload that already runs hot
+- a **PR-ready markdown report** posted as a comment by the included GitHub Action
 
-1. **📸 Snapshot the cluster.** Read everything that matters: pod resource usage, node capacities, autoscaler configs, PDB rules, affinity constraints, and current cloud pricing. This becomes the baseline with a real dollar cost attached.
+The whole flow runs against your own kubeconfig + Prometheus. No SaaS, no agent installed in the cluster, no data leaving your machine.
 
-2. **✏️ Define a scenario.** Describe a hypothetical change:
-   - *"Right-size every pod's requests to p95 actual usage + 20% buffer"*
-   - *"Move all stateless services to spot instances"*
-   - *"Consolidate from 3 node pools to 2 using larger instance types"*
-   - *"What if traffic doubles next month?"*
+## How It Compares
 
-3. **⚙️ Simulate.** Replay the Kubernetes scheduler's bin-packing algorithm against the modified scenario. Run autoscaler logic. Check affinity rules, PDBs, topology constraints. Model spot interruption probability.
+| Need                                                          | Tool                                                  |
+|---------------------------------------------------------------|-------------------------------------------------------|
+| "Show me what we spent last month"                            | Kubecost / OpenCost                                   |
+| "Auto-tune my cluster, I trust you"                           | CAST AI / Karpenter                                   |
+| "Recommend new requests, post the cost delta on every PR"     | **KubeWise**                                          |
+| "Recommend new requests, no CI, runs in-cluster"              | Goldilocks, Robusta KRR, VPA recommender              |
 
-4. **📊 Compare and score.** Side-by-side: baseline vs. scenario. Cost delta, reliability delta, and confidence intervals. Not a single number — a distribution.
+The wedge is the GitHub Action: right-sizing recommendations land in code review with a real dollar number, instead of being a quarterly chore nobody owns.
 
-## 🎯 Differentiator
+## Features
 
-Existing tools either show you the past (Kubecost) or act on the future without you (CAST AI). Nobody lets you **explore the future yourself**. KubeWise sits in the gap — **high insight AND high user agency**.
-
-|                            | Observability tools | Autopilots | **KubeWise** |
-|----------------------------|---------------------|------------|--------------|
-| Shows cost data            | ✅                   | ✅          | ✅            |
-| Recommends changes         | ❌                   | ✅          | ✅            |
-| Simulates before acting    | ❌                   | ❌          | ✅            |
-| User controls the decision | ✅                   | ❌          | ✅            |
-| Runs client-side (no SaaS) | ❌                   | ❌          | ✅            |
-
-## ✨ Features
-
-- **📉 Right-size workloads** based on actual P50/P90/P95/P99 usage with configurable safety buffers
-- **🔗 Simulate node consolidation** to find the minimum number of nodes needed
-- **💰 Estimate spot savings** with eviction risk assessment per workload
-- **🤖 CI/CD integration** via GitHub Action that posts cost impact as PR comments
-- **🔒 Runs entirely client-side** — no SaaS dependency, your cluster data never leaves your machine
+- **Right-size workloads** from P50/P90/P95/P99 Prometheus usage with a configurable safety buffer
+- **Snapshot the cluster** as a stacked-panel cost breakdown per namespace
+- **Live cloud pricing** for AWS, Azure, and GCP, with offline fallback
+- **GitHub Action** that posts a markdown cost-impact report as a PR comment, with optional risk-gated check
+- **OOM-risk classification** per workload, derived from the percentile distribution
+- **Scenario YAML files** for repeatable, version-controlled right-sizing policies
+- **Runs client-side** — no SaaS, no in-cluster agent, no telemetry
 
 ## 🚀 Quick Start
 
@@ -104,7 +98,7 @@ These flags apply to all commands:
 | `--verbose`        | `false`          | Show detailed per-workload breakdown       |
 | `--no-color`       | `false`          | Disable terminal colors                    |
 
-## 📸 Snapshot — See Current Cost Breakdown
+## Snapshot — See Current Cost Breakdown
 
 Snapshot captures the live cluster state and displays the current cost breakdown per namespace using a stacked-panel layout.
 
@@ -167,7 +161,7 @@ KubeWise: Snapshot of current cluster cost breakdown
     web            $640.00     low
 ```
 
-## 📉 Right-Size — Simulate Resource Optimization
+## Right-Size — Recommend Resource Requests
 
 Right-sizes pod resource requests based on actual usage percentiles with a configurable safety buffer.
 
@@ -202,7 +196,7 @@ kubectl whatif rightsize --verbose
 Example output:
 
 ```
-KubeWise: Right-size simulation (p95 + 20% buffer)
+KubeWise: Right-size recommendations (p95 + 20% buffer)
 
   Current monthly cost:    $14230
   Projected monthly cost:  $9840
@@ -217,58 +211,7 @@ KubeWise: Right-size simulation (p95 + 20% buffer)
     auth-service         $700/mo saved     risk: low
 ```
 
-## 🔗 Consolidate — Simulate Node Pool Consolidation
-
-Simulates consolidating workloads onto fewer or different node types using bin-packing.
-
-```bash
-# Consolidate to a specific instance type
-kubectl whatif consolidate --node-type=m6i.xlarge
-
-# Cap the number of nodes
-kubectl whatif consolidate --node-type=m6i.2xlarge --max-nodes=10
-
-# Keep an existing node pool
-kubectl whatif consolidate --node-type=m6i.xlarge --keep-pool=critical-pool
-```
-
-| Flag              | Default   | Description                             |
-|-------------------|-----------|-----------------------------------------|
-| `--node-type`     | required  | Target instance type for consolidation  |
-| `--max-nodes`     | unlimited | Maximum number of nodes in the new pool |
-| `--keep-pool`     | none      | Existing node pool to preserve          |
-| `--target-cpu`    | `0.8`     | Target CPU utilization ratio            |
-| `--target-memory` | `0.8`     | Target memory utilization ratio         |
-
-## 💰 Spot — Simulate Spot Instance Migration
-
-Estimates savings from migrating eligible workloads to spot instances, with per-workload eviction risk scoring.
-
-```bash
-# Default: workloads with >=2 replicas, 65% discount
-kubectl whatif spot
-
-# More aggressive: include single-replica workloads
-kubectl whatif spot --min-replicas=1
-
-# Custom discount rate
-kubectl whatif spot --discount=0.70
-
-# Exclude specific namespaces
-kubectl whatif spot --exclude-namespaces=kube-system,databases
-
-# With detailed risk breakdown
-kubectl whatif spot --verbose
-```
-
-| Flag                   | Default                 | Description                           |
-|------------------------|-------------------------|---------------------------------------|
-| `--min-replicas`       | `2`                     | Minimum replicas for spot eligibility |
-| `--discount`           | `0.65`                  | Spot discount fraction (0.0 - 1.0)    |
-| `--exclude-namespaces` | none                    | Comma-separated namespaces to exclude |
-| `--controller-types`   | `Deployment,ReplicaSet` | Controller types eligible for spot    |
-
-## 📝 Scenario Files — Define Reusable Scenarios
+## Scenario Files — Define Reusable Scenarios
 
 Define scenarios as YAML files for repeatability and version control:
 
@@ -299,7 +242,7 @@ kubectl whatif compare -f aggressive.yaml -f conservative.yaml
 
 See [docs/scenarios.md](docs/scenarios.md) for all scenario types and options.
 
-## 📁 Output Formats
+## Output Formats
 
 All commands support three output formats:
 
@@ -311,7 +254,7 @@ kubectl whatif rightsize --output=markdown  # Markdown for PR comments
 
 The `snapshot` command uses a stacked-panel layout in table mode, showing each namespace as a bordered panel with cost, resource, and workload details. JSON and markdown outputs include the same data in their respective formats.
 
-## 🤖 CI/CD Integration
+## CI/CD Integration
 
 ### GitHub Action
 
@@ -340,28 +283,22 @@ jobs:
 
 ### Action Inputs
 
-| Input           | Required | Default     | Description                                                   |
-|-----------------|----------|-------------|---------------------------------------------------------------|
-| `kubeconfig`    | yes      | —           | Base64-encoded kubeconfig                                     |
-| `scenario`      | yes      | `rightsize` | Scenario type: `rightsize`, `consolidate`, `spot`, `snapshot` |
-| `scenario-file` | no       | —           | Path to scenario YAML (overrides scenario type)               |
-| `percentile`    | no       | `p95`       | Usage percentile (rightsize only)                             |
-| `buffer`        | no       | `20`        | Buffer percentage (rightsize only)                            |
-| `node-type`     | no       | —           | Target instance type (consolidate only, required)             |
-| `min-replicas`  | no       | `2`         | Minimum replicas for spot eligibility (spot only)             |
-| `discount`      | no       | `0.65`      | Spot discount fraction (spot only)                            |
-| `save`          | no       | —           | Save snapshot to JSON file (snapshot only)                    |
-| `comment`       | no       | `true`      | Post result as PR comment                                     |
-| `fail-on-risk`  | no       | `false`     | Fail the check if risk is red                                 |
+| Input           | Required | Default     | Description                                     |
+|-----------------|----------|-------------|-------------------------------------------------|
+| `kubeconfig`    | yes      | —           | Base64-encoded kubeconfig                       |
+| `scenario`      | yes      | `rightsize` | Scenario type: `rightsize` or `snapshot`        |
+| `scenario-file` | no       | —           | Path to scenario YAML (overrides scenario type) |
+| `percentile`    | no       | `p95`       | Usage percentile (rightsize only)               |
+| `buffer`        | no       | `20`        | Buffer percentage (rightsize only)              |
+| `save`          | no       | —           | Save snapshot to JSON file (snapshot only)      |
+| `comment`       | no       | `true`      | Post result as PR comment                       |
+| `fail-on-risk`  | no       | `false`     | Fail the check if risk is red                   |
 
 ### Action Outputs
 
-| Output            | Description                                  |
-|-------------------|----------------------------------------------|
-| `savings`         | Projected monthly savings                    |
-| `savings-percent` | Projected savings percentage                 |
-| `risk-level`      | Overall risk level (`green`, `amber`, `red`) |
-| `markdown`        | Full markdown report                         |
+| Output     | Description          |
+|------------|----------------------|
+| `markdown` | Full markdown report |
 
 ### Examples
 
@@ -373,18 +310,6 @@ jobs:
     kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
     scenario: rightsize
     comment: 'true'
-```
-
-**Spot migration analysis with risk gate:**
-
-```yaml
-- uses: tochemey/kubewise/action@v1
-  with:
-    kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
-    scenario: spot
-    min-replicas: '2'
-    discount: '0.65'
-    fail-on-risk: 'true'
 ```
 
 **Cluster cost snapshot:**
@@ -408,7 +333,7 @@ jobs:
     fail-on-risk: 'true'
 ```
 
-**Use outputs in downstream steps:**
+**Use the markdown output in downstream steps:**
 
 ```yaml
 - uses: tochemey/kubewise/action@v1
@@ -417,16 +342,16 @@ jobs:
     kubeconfig: ${{ secrets.KUBECONFIG_B64 }}
     scenario: rightsize
 
-- run: echo "Projected savings: ${{ steps.kubewise.outputs.savings }}"
+- run: echo "${{ steps.kubewise.outputs.markdown }}" >> $GITHUB_STEP_SUMMARY
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Quick Start](docs/quickstart.md)
 - [Scenarios](docs/scenarios.md)
 - [Architecture](docs/architecture.md)
 
-## 🤝 Contributing
+## Contributing
 
 ```bash
 make lint        # Run linters
@@ -435,6 +360,6 @@ make test-all    # Lint + test
 make build       # Build binary
 ```
 
-## 📄 License
+## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.

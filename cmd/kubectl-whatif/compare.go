@@ -27,7 +27,6 @@ import (
 	"github.com/tochemey/kubewise/pkg/pricing"
 	"github.com/tochemey/kubewise/pkg/risk"
 	"github.com/tochemey/kubewise/pkg/scenario"
-	"github.com/tochemey/kubewise/pkg/simulator"
 )
 
 var compareFiles []string
@@ -53,7 +52,6 @@ func runCompare(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), 3*time.Minute)
 	defer cancel()
 
-	// Parse all scenarios first
 	scenarios := make([]scenario.Scenario, 0, len(compareFiles))
 	for _, path := range compareFiles {
 		s, err := scenario.ParseScenarioFile(path)
@@ -68,7 +66,6 @@ func runCompare(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Detect pricing provider once
 	providerName, region := pricing.DetectProvider(snap.Nodes)
 	var pricingProvider pricing.PricingProvider
 	if providerName != "" && region != "" {
@@ -78,34 +75,27 @@ func runCompare(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Apply each scenario and render
+	var baselineCost float64
+	if pricingProvider != nil {
+		baselineCost = calculateMonthlyCostFromSnapshot(snap, pricingProvider, region)
+	}
+
 	for i, s := range scenarios {
 		mutated, applyErr := scenario.ApplyScenario(s, snap)
 		if applyErr != nil {
 			return fmt.Errorf("applying scenario %d (%s): %w", i+1, s.Kind(), applyErr)
 		}
 
-		simResult, simErr := simulator.Simulate(mutated)
-		if simErr != nil {
-			return fmt.Errorf("simulating scenario %d: %w", i+1, simErr)
-		}
-
-		var costReport *simulator.CostReport
-		if pricingProvider != nil {
-			costReport = simulator.CalculateCost(snap, simResult, pricingProvider, 0)
-		}
-
 		riskReport := risk.ScoreOOMRisk(mutated)
-		riskReport.SchedulingRisk = risk.SchedulingRisk(len(simResult.UnschedulablePods), len(mutated.Pods))
 		riskReport.OverallLevel = risk.ClassifyRisk(riskReport.ClusterOOM, riskReport.ClusterEviction, riskReport.SchedulingRisk)
 
 		meta := scenario.ScenarioMetadata{Name: fmt.Sprintf("Scenario %d: %s", i+1, s.Kind())}
 
-		report := buildCostReport(meta, costReport, riskReport)
+		report := buildCostReport(meta, baselineCost, baselineCost, riskReport)
 		if renderErr := output.Render(os.Stdout, report, outputFormat); renderErr != nil {
 			return renderErr
 		}
-		fmt.Fprintln(os.Stdout) // blank line between scenarios
+		fmt.Fprintln(os.Stdout)
 	}
 
 	return nil

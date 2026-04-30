@@ -40,8 +40,6 @@ func TestSubcommandsRegistered(t *testing.T) {
 
 	assert.True(t, commands["snapshot"], "snapshot command should be registered")
 	assert.True(t, commands["rightsize"], "rightsize command should be registered")
-	assert.True(t, commands["consolidate"], "consolidate command should be registered")
-	assert.True(t, commands["spot"], "spot command should be registered")
 	assert.True(t, commands["apply"], "apply command should be registered")
 	assert.True(t, commands["compare"], "compare command should be registered")
 	assert.True(t, commands["version"], "version command should be registered")
@@ -121,48 +119,6 @@ func TestVersionCommandRuns(t *testing.T) {
 	root.SetArgs([]string{"version"})
 	err := root.Execute()
 	assert.NoError(t, err)
-}
-
-func TestConsolidateFlagsRegistered(t *testing.T) {
-	root := newRootCmd()
-	var consCmd *cobra.Command
-	for _, cmd := range root.Commands() {
-		if cmd.Name() == "consolidate" {
-			consCmd = cmd
-			break
-		}
-	}
-	require.NotNil(t, consCmd)
-
-	flags := []string{"node-type", "max-nodes", "keep-pool", "target-cpu", "target-memory"}
-	for _, flag := range flags {
-		f := consCmd.Flags().Lookup(flag)
-		assert.NotNil(t, f, "consolidate flag --%s should be registered", flag)
-	}
-}
-
-func TestSpotFlagsRegistered(t *testing.T) {
-	root := newRootCmd()
-	var spotCmd *cobra.Command
-	for _, cmd := range root.Commands() {
-		if cmd.Name() == "spot" {
-			spotCmd = cmd
-			break
-		}
-	}
-	require.NotNil(t, spotCmd)
-
-	flags := map[string]string{
-		"min-replicas":      "2",
-		"discount":          "0.65",
-		"exclude-namespace": "kube-system",
-		"controller-types":  "Deployment,ReplicaSet",
-	}
-	for flag, defaultVal := range flags {
-		f := spotCmd.Flags().Lookup(flag)
-		assert.NotNil(t, f, "spot flag --%s should be registered", flag)
-		assert.Equal(t, defaultVal, f.DefValue, "spot flag --%s default", flag)
-	}
 }
 
 func TestApplyFlagsRegistered(t *testing.T) {

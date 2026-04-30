@@ -18,11 +18,10 @@ import (
 	"github.com/tochemey/kubewise/pkg/output"
 	"github.com/tochemey/kubewise/pkg/risk"
 	"github.com/tochemey/kubewise/pkg/scenario"
-	"github.com/tochemey/kubewise/pkg/simulator"
 )
 
 // buildCostReport constructs an output.Report from cost and risk data.
-func buildCostReport(meta scenario.ScenarioMetadata, costReport *simulator.CostReport, riskReport *risk.RiskReport) output.Report {
+func buildCostReport(meta scenario.ScenarioMetadata, baselineCost, projectedCost float64, riskReport *risk.RiskReport) output.Report {
 	report := output.Report{
 		ScenarioName: meta.Name,
 		ScenarioDesc: meta.Description,
@@ -40,30 +39,27 @@ func buildCostReport(meta scenario.ScenarioMetadata, costReport *simulator.CostR
 		}
 	}
 
-	if costReport != nil {
-		report.BaselineCost = costReport.BaselineMonthlyCost
-		report.ProjectedCost = costReport.ScenarioMonthlyCost
-		report.Savings = costReport.Savings
-		report.SavingsPercent = costReport.SavingsPercent
+	report.BaselineCost = baselineCost
+	report.ProjectedCost = projectedCost
+	report.Savings = baselineCost - projectedCost
+	if baselineCost > 0 {
+		report.SavingsPercent = (report.Savings / baselineCost) * 100
+	}
 
-		for ns, nc := range costReport.PerNamespace {
-			nsRisk := risk.RiskGreen
-			// Find worst workload risk in this namespace
-			if riskReport != nil {
-				for _, wr := range riskReport.PerWorkload {
-					if wr.Namespace == ns && wr.Level > nsRisk {
-						nsRisk = wr.Level
-					}
-				}
+	if riskReport != nil {
+		nsRisk := make(map[string]risk.RiskLevel)
+		for _, wr := range riskReport.PerWorkload {
+			if level, ok := nsRisk[wr.Namespace]; !ok || wr.Level > level {
+				nsRisk[wr.Namespace] = wr.Level
 			}
+		}
 
+		for ns, level := range nsRisk {
 			summary := output.NamespaceSummary{
 				Namespace: ns,
-				Savings:   nc.Savings,
-				RiskLevel: nsRisk,
+				RiskLevel: level,
 			}
-
-			if verbose && riskReport != nil {
+			if verbose {
 				for _, wr := range riskReport.PerWorkload {
 					if wr.Namespace == ns {
 						summary.Workloads = append(summary.Workloads, output.WorkloadSummary{
@@ -73,7 +69,6 @@ func buildCostReport(meta scenario.ScenarioMetadata, costReport *simulator.CostR
 					}
 				}
 			}
-
 			report.NamespaceBreakdown = append(report.NamespaceBreakdown, summary)
 		}
 	}

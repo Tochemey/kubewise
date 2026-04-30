@@ -4,14 +4,17 @@
 
 ## What is this project?
 
-KubeWise is a Kubernetes cost × performance "what-if" simulator. It is a CLI tool distributed as a kubectl plugin (`kubectl whatif`) that:
+KubeWise is a Kubernetes right-sizing tool that pulls real CPU/memory usage percentiles from Prometheus and recommends new resource requests with cost impact and OOM-risk classification. It is a CLI distributed as a kubectl plugin (`kubectl whatif`) and a GitHub Action that posts the cost delta as a PR comment.
 
-1. Snapshots a live cluster's state and real resource usage
-2. Applies hypothetical changes (scenarios) to a copy of that snapshot
-3. Simulates Kubernetes scheduling against the mutated state
-4. Reports cost savings, reliability risk, and scheduling feasibility
+Pipeline:
 
-It is written in Go, runs entirely client-side (no SaaS), and ships as a single binary via krew.
+1. Snapshot the cluster (Kubernetes API + Prometheus percentiles)
+2. Apply a scenario (`RightSize` or `Composite`) to a deep copy of the snapshot
+3. Score OOM risk per workload from the percentile distribution
+4. Compute cost from cloud pricing APIs (AWS/Azure/GCP) with offline fallback
+5. Render to terminal table, JSON, or markdown (PR comment)
+
+Written in Go, runs entirely client-side (no SaaS, no in-cluster agent), ships as a single binary.
 
 ## Repository layout
 
@@ -33,20 +36,12 @@ kubewise/
 │   │   ├── cache.go                # Local file cache with TTL
 │   │   └── fallback.go             # YAML-based manual pricing input
 │   ├── scenario/                   # Mutations applied to snapshot copies
-│   │   ├── engine.go               # Deep-copy + apply logic
-│   │   ├── rightsize.go
-│   │   ├── consolidate.go
-│   │   ├── spot.go
+│   │   ├── engine.go               # Deep-copy + apply logic; Composite
+│   │   ├── rightsize.go            # Adjusts requests/limits from percentiles
+│   │   ├── scope.go                # Namespace/label scope filtering
 │   │   └── parser.go               # YAML scenario file parser
-│   ├── simulator/                  # Scheduling + cost simulation
-│   │   ├── binpack.go              # Core bin-packing loop
-│   │   ├── predicates.go           # Filter functions (fits?, affinity?, taints?)
-│   │   ├── priorities.go           # Scoring functions (MostRequested, BalancedResource)
-│   │   ├── autoscaler.go           # Virtual node provisioning for consolidation
-│   │   └── cost.go                 # Monthly cost calculation
 │   ├── risk/                       # Risk scoring
-│   │   ├── oom.go                  # OOM probability from usage histograms
-│   │   ├── eviction.go             # Spot interruption risk
+│   │   ├── oom.go                  # OOM probability from usage percentiles
 │   │   ├── scheduling.go           # Unschedulable pod detection
 │   │   └── aggregate.go            # Cluster-wide rollup + classification
 │   └── output/                     # Rendering
@@ -71,21 +66,20 @@ kubewise/
 
 ### Pure functions over side effects
 
-The core simulation pipeline is designed as a chain of pure transformations:
+The pipeline is a chain of pure transformations:
 
 ```
 Collect(cluster) → Snapshot
 DeepCopy(snapshot) → mutable copy
 Apply(scenario, copy) → mutated snapshot
-Simulate(mutated) → SimulationResult
-Score(result, original) → Report
+Score(mutated) → RiskReport
 ```
 
-Only the collector and output layers have side effects (API calls, file I/O). Everything in between operates on in-memory structs. This makes the simulator fully testable without a live cluster.
+Only the collector, pricing, and output layers have side effects (API calls, file I/O). Everything in between operates on in-memory structs.
 
 ### Snapshot is the single source of truth
 
-Every module operates on `ClusterSnapshot` or its sub-structs. Never call the Kubernetes API or Prometheus mid-simulation. All data must be captured upfront during the collect phase. If you find yourself wanting to make an API call inside `pkg/simulator/` or `pkg/scenario/`, you're doing it wrong — add the data to the snapshot instead.
+Every module operates on `ClusterSnapshot` or its sub-structs. Never call the Kubernetes API or Prometheus mid-pipeline. All data must be captured upfront during the collect phase. If you find yourself wanting to make an API call inside `pkg/scenario/` or `pkg/risk/`, you're doing it wrong — add the data to the snapshot instead.
 
 ### Scenarios are pure mutations
 
@@ -95,10 +89,6 @@ A scenario takes a snapshot copy and returns a mutated version. It must never:
 - Modify the original snapshot (always deep-copy first)
 - Call other scenarios implicitly (composition is handled by the engine)
 
-### Simulation is read-only
-
-The simulator reads a mutated snapshot and produces a result. It does not modify the snapshot. If the bin-packer needs to track placement state, it uses a separate `SchedulingState` struct.
-
 ## Go conventions
 
 ### Module boundaries
@@ -106,14 +96,13 @@ The simulator reads a mutated snapshot and produces a result. It does not modify
 Each package under `pkg/` has a single public entry point function that orchestrates the module's work. Internal helpers are unexported. Cross-package dependencies flow downward only:
 
 ```
-cmd/ → pkg/collector, pkg/scenario, pkg/simulator, pkg/risk, pkg/output
+cmd/ → pkg/collector, pkg/scenario, pkg/pricing, pkg/risk, pkg/output
 pkg/scenario → pkg/collector/types (snapshot structs only, not collection functions)
-pkg/simulator → pkg/collector/types
-pkg/risk → pkg/collector/types, pkg/simulator (result structs)
+pkg/risk → pkg/collector/types
 pkg/output → pkg/risk (report structs)
 ```
 
-Never import upward. Never import between sibling packages at the same level (e.g., `scenario` must not import `simulator`).
+Never import upward. Never import between sibling packages at the same level.
 
 ### Error handling
 
@@ -179,7 +168,7 @@ klog.Error("something failed: ", err)
 - Use `"err"` only via `ErrorS` (it handles the error argument automatically)
 - Namespace and name should be separate keys, not combined: `"namespace", "default", "name", "web-7b4f9"` — not `"pod", "default/web-7b4f9"`
 
-**No logging in pure functions.** The scenario engine (`pkg/scenario/`) and simulation engine (`pkg/simulator/`) should not log. They are pure transformations. If you need observability into these modules, return structured metadata in the result type. Logging belongs in the orchestration layer (`cmd/`) and the I/O layer (`pkg/collector/`, `pkg/pricing/`, `pkg/output/`).
+**No logging in pure functions.** The scenario engine (`pkg/scenario/`) and risk scorer (`pkg/risk/`) should not log. They are pure transformations. If you need observability into these modules, return structured metadata in the result type. Logging belongs in the orchestration layer (`cmd/`) and the I/O layer (`pkg/collector/`, `pkg/pricing/`, `pkg/output/`).
 
 **Testing:** In tests, call `klog.SetOutput(io.Discard)` or use `ktesting.NewLogger` from `k8s.io/klog/v2/ktesting` to capture and assert log output.
 
@@ -248,9 +237,9 @@ import (
 ### Naming
 
 - Snapshot structs: `NodeSnapshot`, `PodSnapshot`, `ContainerUsageProfile`
-- Scenario types: `RightSizeScenario`, `ConsolidateScenario`, `SpotMigrateScenario`
-- Result types: `SimulationResult`, `RiskReport`, `CostDelta`
-- Functions: verb-first (`CollectSnapshot`, `ApplyScenario`, `SimulatePlacement`, `ScoreRisk`)
+- Scenario types: `RightSizeScenario`, `CompositeScenario`
+- Result types: `RiskReport`, `output.Report`
+- Functions: verb-first (`CollectSnapshot`, `ApplyScenario`, `ScoreOOMRisk`)
 - Test files: `*_test.go` in the same package
 - Fixture files: `testdata/` at repo root, loaded via `os.ReadFile` in tests
 
@@ -398,133 +387,6 @@ func (s Scope) Includes(pod PodSnapshot) bool {
 }
 ```
 
-### pkg/simulator — Bin-packing and cost simulation
-
-This is the hardest module. The bin-packer is a simplified Kubernetes scheduler.
-
-**Core loop (binpack.go):**
-
-```go
-func Simulate(snap *ClusterSnapshot) (*SimulationResult, error) {
-    state := NewSchedulingState(snap.Nodes)
-    var unschedulable []PodSnapshot
-    
-    // Sort pods: DaemonSets first (they MUST be on every node),
-    // then by resource request descending (large pods first = better packing)
-    pods := sortPods(snap.Pods)
-    
-    for _, pod := range pods {
-        placed := false
-        bestNode := ""
-        bestScore := -1
-        
-        for _, node := range state.Nodes {
-            // Filter phase
-            if !FitsResources(pod, node, state) { continue }
-            if !MatchesAffinity(pod, node) { continue }
-            if !ToleratesTaints(pod, node) { continue }
-            if !SatisfiesTopologySpread(pod, node, state) { continue }
-            
-            // Score phase
-            score := ScoreNode(pod, node, state)
-            if score > bestScore {
-                bestScore = score
-                bestNode = node.Name
-            }
-        }
-        
-        if bestNode != "" {
-            state.Place(pod, bestNode)
-            placed = true
-        }
-        
-        if !placed {
-            unschedulable = append(unschedulable, pod)
-        }
-    }
-    
-    return &SimulationResult{
-        PlacedPods:       state.Placements,
-        UnschedulablePods: unschedulable,
-        NodeUtilization:   state.Utilization(),
-        TotalNodes:        len(state.ActiveNodes()),
-    }, nil
-}
-```
-
-**Predicate implementations (predicates.go):**
-
-```go
-// FitsResources checks if the node has enough allocatable CPU and memory
-// after accounting for all already-placed pods.
-func FitsResources(pod PodSnapshot, node NodeState, state *SchedulingState) bool {
-    podCPU := totalPodCPURequest(pod)
-    podMem := totalPodMemoryRequest(pod)
-    availCPU := node.Allocatable.CPU - state.UsedCPU(node.Name)
-    availMem := node.Allocatable.Memory - state.UsedMemory(node.Name)
-    return podCPU <= availCPU && podMem <= availMem
-}
-
-// MatchesAffinity checks requiredDuringScheduling node affinity only.
-// PreferredDuringScheduling is handled in scoring, not filtering.
-func MatchesAffinity(pod PodSnapshot, node NodeState) bool {
-    if pod.Affinity == nil || pod.Affinity.NodeAffinity == nil {
-        return true
-    }
-    required := pod.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
-    if required == nil {
-        return true
-    }
-    // Check each term — pod needs to match at least one term
-    for _, term := range required.NodeSelectorTerms {
-        if matchesNodeSelectorTerm(term, node.Labels) {
-            return true
-        }
-    }
-    return false
-}
-
-// ToleratesTaints checks that the pod tolerates all NoSchedule taints on the node.
-func ToleratesTaints(pod PodSnapshot, node NodeState) bool {
-    for _, taint := range node.Taints {
-        if taint.Effect != "NoSchedule" { continue }
-        if !podToleratesTaint(pod.Tolerations, taint) {
-            return false
-        }
-    }
-    return true
-}
-```
-
-**Scoring (priorities.go):**
-
-We use `MostRequestedPriority` — the opposite of the default scheduler's `LeastRequestedPriority`. We're optimizing for bin-packing (fewest nodes), not spreading.
-
-```go
-func ScoreNode(pod PodSnapshot, node NodeState, state *SchedulingState) int {
-    // MostRequestedPriority: prefer nodes that are already heavily used
-    // This packs pods tightly, leaving empty nodes that can be removed
-    cpuUsed := state.UsedCPU(node.Name) + totalPodCPURequest(pod)
-    memUsed := state.UsedMemory(node.Name) + totalPodMemoryRequest(pod)
-    
-    cpuRatio := float64(cpuUsed) / float64(node.Allocatable.CPU)
-    memRatio := float64(memUsed) / float64(node.Allocatable.Memory)
-    
-    // Score 0-100, higher = more packed = better
-    score := int((cpuRatio + memRatio) / 2.0 * 100)
-    
-    // Penalty for resource imbalance (prefer balanced CPU:mem ratio)
-    imbalance := math.Abs(cpuRatio - memRatio)
-    score -= int(imbalance * 20)
-    
-    return max(score, 0)
-}
-```
-
-**DaemonSet handling:** DaemonSet pods are not "scheduled" by the bin-packer — they are pre-placed on every matching node before the main loop runs. When simulating consolidation with a different node type, recalculate which DaemonSets would run on the new nodes (based on node selectors and tolerations) and reserve their resources upfront.
-
-**Pod sort order matters.** Sort by: (1) DaemonSets first, (2) then by total resource request descending. Placing large pods first produces much better packing. This is the same heuristic used by real bin-packing algorithms (first-fit-decreasing).
-
 ### pkg/risk — Risk scoring
 
 **OOM risk calculation:**
@@ -582,7 +444,6 @@ var (
 - `pkg/collector`: Mock the Kubernetes API with `fake.NewSimpleClientset`. Test that snapshot structs are populated correctly from API responses.
 - `pkg/pricing`: Use HTTP test servers (`httptest.NewServer`) to mock cloud pricing APIs. Test cache TTL logic. Test YAML fallback parsing.
 - `pkg/scenario`: Create fixture snapshots in `testdata/`, apply scenarios, assert mutations. Test scope filtering edge cases (empty namespace list, wildcard, exclude overrides include).
-- `pkg/simulator`: Hand-craft node/pod configurations with known-correct placements. Test each predicate individually. Test bin-packing with increasing complexity (2 pods → 100 pods). Test DaemonSet pre-placement.
 - `pkg/risk`: Test boundary conditions around thresholds. Test with insufficient data (should return unknown, not zero). Test aggregate rollup math.
 
 ### Test fixture format
@@ -593,14 +454,11 @@ Store fixtures as JSON files in `testdata/`:
 testdata/
 ├── snapshots/
 │   ├── small-cluster.json      # 3 nodes, 10 pods — fast unit tests
-│   ├── medium-cluster.json     # 20 nodes, 200 pods — realistic
-│   └── edge-cases.json         # Affinity, taints, topology spread
+│   └── medium-cluster.json     # 20 nodes, 200 pods — realistic
 ├── scenarios/
-│   ├── rightsize-p95.yaml
-│   └── consolidate-m6i.yaml
+│   └── rightsize-p95.yaml
 └── expected/
-    ├── rightsize-p95-result.json
-    └── consolidate-m6i-result.json
+    └── rightsize-p95-result.json
 ```
 
 Load fixtures with a helper:
@@ -662,10 +520,6 @@ Metrics-server returns *current* CPU/memory usage. It has no history. If Prometh
 
 AWS and Azure price by instance type (single hourly rate). GCP prices CPU and memory separately (predefined or custom). The pricing abstraction must handle this difference behind a common interface.
 
-### Spot interruption is per availability zone
-
-Spot interruption rates vary by instance type AND availability zone. For MVP, use per-instance-type averages. Phase 2 should factor in zone distribution of the user's nodes.
-
 ### Deep copy is not optional
 
 Go slices and maps are reference types. A naive struct copy shares underlying arrays. If a scenario modifies `mutated.Pods[0].Containers[0].Requests.CPU`, it will also modify the original snapshot unless you deep-copy all nested slices and maps. This is the #1 source of simulation bugs. Test it explicitly: modify a copy and assert the original is unchanged.
@@ -678,57 +532,39 @@ The codebase uses `k8s.io/klog/v2` exclusively. Do not introduce `log`, `log/slo
 
 Every `.go` file must start with the copyright header before the `package` line. The `goheader` linter in `.golangci.yml` enforces this and CI will reject PRs with missing headers. This includes test files, generated files, and one-off scripts under `cmd/`. The most common mistake is creating a new file and jumping straight to `package foo` — always add the header first.
 
-## Build order (what to implement first)
-
-This is the priority order. Each step produces a usable artifact:
-
-1. **`pkg/collector/types.go`** — Define all snapshot structs. This is the data contract everything else depends on. Get this right first.
-2. **`pkg/collector/snapshot.go`** — Implement snapshot collection from a live cluster. At this point you can run `kubectl whatif snapshot` and see your cluster state.
-3. **`pkg/pricing/`** — Implement at least one provider (AWS is the most common). Add cache and YAML fallback. Now `kubectl whatif snapshot` shows dollar amounts.
-4. **`pkg/scenario/rightsize.go`** — Implement right-sizing. This requires no bin-packing — just arithmetic on usage profiles. First end-to-end scenario.
-5. **`pkg/risk/oom.go`** — OOM risk scoring for right-sizing output.
-6. **`pkg/output/table.go`** — Terminal rendering. Now you have a complete working CLI for right-sizing.
-7. **`pkg/simulator/predicates.go`** — Implement filter functions one at a time, with tests for each.
-8. **`pkg/simulator/binpack.go`** — Core bin-packing loop, using the predicates.
-9. **`pkg/scenario/consolidate.go`** — Node consolidation scenario (needs bin-packer).
-10. **`pkg/simulator/autoscaler.go`** — Virtual node provisioning for consolidation.
-11. **`pkg/scenario/spot.go`** — Spot migration scenario.
-12. **`pkg/risk/eviction.go` + `scheduling.go`** — Remaining risk scorers.
-13. **`pkg/output/json.go` + `markdown.go`** — JSON and markdown output formats.
-14. **CI integration** — GitHub Action wrapper.
-
 ## Scenario YAML schema
 
-All scenario files follow this structure:
+Two scenario kinds are supported:
 
 ```yaml
 apiVersion: kubewise.io/v1alpha1
-kind: RightSize | Consolidate | SpotMigrate | Composite
+kind: RightSize | Composite
 metadata:
   name: my-scenario
   description: "Human-readable description shown in output"
 spec:
-  # kind-specific fields (see examples in scenarios/ directory)
+  # kind-specific fields (see scenarios/ for examples)
 ```
 
-For `Composite` scenarios (chaining multiple mutations):
+For `Composite` scenarios (chaining multiple `RightSize` passes):
 
 ```yaml
 apiVersion: kubewise.io/v1alpha1
 kind: Composite
 metadata:
-  name: aggressive-savings
-  description: "Right-size then move stateless to spot"
+  name: layered-rightsize
 spec:
   steps:
     - kind: RightSize
       spec:
         percentile: p90
         buffer: 15
-    - kind: SpotMigrate
+    - kind: RightSize
       spec:
-        min_replicas: 2
-        spot_discount: 0.65
+        percentile: p99
+        buffer: 30
+        scope:
+          namespaces: ["payments"]
 ```
 
 Composite scenarios apply mutations sequentially — each step receives the output of the previous step.
@@ -773,8 +609,8 @@ Before submitting any PR, verify:
 
 - [ ] Every `.go` file (including tests) starts with the license header: `// Copyright <YEAR> KubeWise Authors` + `// SPDX-License-Identifier: Apache-2.0`
 - [ ] All logging uses `klog.InfoS` / `klog.ErrorS` / `klog.V(n).InfoS` — no `fmt.Println`, `log.*`, or unstructured `klog.Infof`
-- [ ] No logging inside `pkg/simulator/` or `pkg/scenario/` (pure functions — return metadata, don't log)
-- [ ] No API calls inside `pkg/simulator/` or `pkg/scenario/`
+- [ ] No logging inside `pkg/scenario/` or `pkg/risk/` (pure functions — return metadata, don't log)
+- [ ] No API calls inside `pkg/scenario/` or `pkg/risk/`
 - [ ] All resource calculations use `int64` millicores/bytes, not floats
 - [ ] Scenario mutations operate on a deep copy, not the original
 - [ ] New predicates have individual unit tests with edge cases

@@ -89,19 +89,13 @@ KubeWise: Right-size simulation (p95 + 20% buffer)
     web-frontend         $640/mo saved     risk: low
 ```
 
-### Other scenarios
+### Scenario files and comparisons
 
 ```bash
-# Node consolidation
-kubectl whatif consolidate --node-type=m6i.xlarge --max-nodes=50
-
-# Spot migration
-kubectl whatif spot --min-replicas=2 --discount=0.65
-
 # Apply a scenario file
-kubectl whatif apply -f scenarios/composite-savings.yaml
+kubectl whatif apply -f scenarios/rightsize-conservative.yaml
 
-# Compare scenarios
+# Compare scenarios side by side
 kubectl whatif compare -f scenarios/rightsize-conservative.yaml -f scenarios/rightsize-aggressive.yaml
 ```
 

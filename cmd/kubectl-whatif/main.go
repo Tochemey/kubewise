@@ -55,10 +55,19 @@ func main() {
 func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kubectl-whatif",
-		Short: "Kubernetes cost and performance what-if simulator",
-		Long: `KubeWise is a Kubernetes cost × performance "what-if" simulator.
-It snapshots a live cluster's state, applies hypothetical changes,
-simulates the outcome, and reports cost savings alongside reliability risk.`,
+		Short: "Right-size Kubernetes workloads from Prometheus usage data",
+		Long: `KubeWise snapshots a live cluster, pulls actual CPU/memory usage
+percentiles from Prometheus, and reports right-sizing recommendations
+with cost impact and OOM-risk classification.
+
+Designed to run as a kubectl plugin or in CI: a GitHub Action posts the
+projected cost delta as a pull-request comment.
+
+Primary commands:
+  snapshot    Show current cost breakdown per namespace
+  rightsize   Recommend pod request changes from usage percentiles
+  apply       Run a scenario defined in a YAML file
+  compare     Run multiple scenarios side-by-side`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPostRun: func(_ *cobra.Command, _ []string) {
@@ -79,8 +88,6 @@ simulates the outcome, and reports cost savings alongside reliability risk.`,
 	// Register subcommands
 	cmd.AddCommand(newSnapshotCmd())
 	cmd.AddCommand(newRightSizeCmd())
-	cmd.AddCommand(newConsolidateCmd())
-	cmd.AddCommand(newSpotCmd())
 	cmd.AddCommand(newApplyCmd())
 	cmd.AddCommand(newCompareCmd())
 	cmd.AddCommand(newVersionCmd())

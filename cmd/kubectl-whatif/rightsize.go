@@ -101,10 +101,7 @@ func runRightSize(cmd *cobra.Command, _ []string) error {
 			klog.V(1).InfoS("Could not fetch pricing, cost estimates unavailable", "err", pErr)
 		} else {
 			baselineCost = calculateMonthlyCostFromSnapshot(snap, pricingProvider, region)
-			projectedCost = baselineCost // right-sizing doesn't change node count, but changes utilization
-			// For right-sizing, projected cost is based on reduced resource needs
-			// which could allow consolidation — for now, show same node cost
-			// The real savings come from the potential to consolidate
+			projectedCost = baselineCost
 		}
 	}
 

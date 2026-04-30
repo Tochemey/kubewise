@@ -38,21 +38,6 @@ else
                 "--buffer=${INPUT_BUFFER}"
                 "${CMD_ARGS[@]}")
             ;;
-        consolidate)
-            if [[ -z "${INPUT_NODE_TYPE:-}" ]]; then
-                echo "::error::node-type input is required for consolidation scenario"
-                exit 1
-            fi
-            CMD_ARGS=("consolidate"
-                "--node-type=${INPUT_NODE_TYPE}"
-                "${CMD_ARGS[@]}")
-            ;;
-        spot)
-            CMD_ARGS=("spot"
-                "--min-replicas=${INPUT_MIN_REPLICAS}"
-                "--discount=${INPUT_DISCOUNT}"
-                "${CMD_ARGS[@]}")
-            ;;
         snapshot)
             CMD_ARGS=("snapshot" "${CMD_ARGS[@]}")
             if [[ -n "${INPUT_SAVE:-}" ]]; then
@@ -60,7 +45,7 @@ else
             fi
             ;;
         *)
-            echo "::error::Unknown scenario type: ${INPUT_SCENARIO}. Use rightsize, consolidate, spot, or snapshot."
+            echo "::error::Unknown scenario type: ${INPUT_SCENARIO}. Use rightsize or snapshot."
             exit 1
             ;;
     esac
